@@ -7,7 +7,7 @@ class SharePayload {
   final FileTransferType type;
   final String fileName;
   final int size;
-  final String? data; // Used for text or < 1MB files (base64)
+  final String? data; // for text (raw string) or base64 file content
   final String senderName;
 
   SharePayload({
@@ -20,22 +20,26 @@ class SharePayload {
   });
 
   Map<String, dynamic> toJson() => {
-    'id': id,
-    'type': type.index,
-    'fileName': fileName,
-    'size': size,
-    'data': data,
-    'senderName': senderName,
-  };
+        'id': id,
+        'type': type.index,
+        'fileName': fileName,
+        'size': size,
+        'data': data,
+        'senderName': senderName,
+      };
 
   factory SharePayload.fromJson(Map<String, dynamic> json) => SharePayload(
-    id: json['id'],
-    type: FileTransferType.values[json['type']],
-    fileName: json['fileName'],
-    size: json['size'],
-    data: json['data'],
-    senderName: json['senderName'],
-  );
+        id: json['id'],
+        type: FileTransferType.values[json['type']],
+        fileName: json['fileName'],
+        size: json['size'],
+        data: json['data'],
+        senderName: json['senderName'],
+      );
+
+  @override
+  String toString() =>
+      'SharePayload(id: $id, type: $type, from: $senderName, file: $fileName)';
 }
 
 class DiscoveredDevice {
@@ -44,4 +48,15 @@ class DiscoveredDevice {
   final int port;
 
   DiscoveredDevice({required this.name, required this.ip, required this.port});
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is DiscoveredDevice &&
+          runtimeType == other.runtimeType &&
+          ip == other.ip &&
+          port == other.port;
+
+  @override
+  int get hashCode => ip.hashCode ^ port.hashCode;
 }
