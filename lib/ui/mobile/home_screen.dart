@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
-import 'package:intl/intl.dart';   // add intl package for date formatting
+import 'package:intl/intl.dart';
 
 import '../../core/app_state.dart';
 import '../../core/models.dart';
@@ -16,17 +16,15 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final ScrollController _scrollController = ScrollController();
-  bool _autoScroll = true;
 
   @override
   void initState() {
     super.initState();
-    // Scroll to bottom whenever the history list changes
     WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
   }
 
   void _scrollToBottom() {
-    if (_scrollController.hasClients && _autoScroll) {
+    if (_scrollController.hasClients) {
       _scrollController.animateTo(
         _scrollController.position.maxScrollExtent,
         duration: const Duration(milliseconds: 300),
@@ -44,9 +42,9 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     final appState = context.watch<AppState>();
-    final history = appState.history; // oldest → newest
+    final history = appState.history;
 
-    // Trigger auto-scroll after each rebuild (new message)
+    // Auto-scroll after each rebuild (new message)
     WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
 
     return Scaffold(
@@ -74,7 +72,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                     itemCount: history.length,
                     itemBuilder: (context, index) {
-                      return _buildMessageBubble(context, history[index]);
+                      return _buildMessageBubble(context, history[index], index);
                     },
                   ),
           ),
@@ -84,15 +82,24 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildMessageBubble(BuildContext context, SharePayload payload) {
+  Widget _buildMessageBubble(BuildContext context, SharePayload payload, int index) {
     final appState = context.read<AppState>();
+    final history = appState.history;
     final isMe = payload.senderName == appState.deviceName;
     final timeString = DateFormat('HH:mm').format(payload.timestamp);
 
-    // Alignment based on sender
+    // Show sender name only for received messages, and only if different from previous sender
+    final showSenderName = !isMe &&
+        (index == 0 || history[index - 1].senderName != payload.senderName);
+
     final alignment = isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start;
-    final bubbleColor = isMe ? AppTheme.accentColor : AppTheme.surfaceColor;
-    final textColor = isMe ? Colors.white : AppTheme.textMain;
+    // Sent bubble – light green (#DCF8C6), received – white (surface)
+    final bubbleColor = isMe ? const Color(0xFFDCF8C6) : AppTheme.surfaceColor;
+    final textColor = isMe ? AppTheme.textMain : AppTheme.textMain; // both dark text
+    final timeCopyColor = isMe
+        ? AppTheme.textMuted.withOpacity(0.8)
+        : AppTheme.textMuted.withOpacity(0.7);
+
     final borderRadius = isMe
         ? const BorderRadius.only(
             topLeft: Radius.circular(16),
@@ -112,8 +119,8 @@ class _HomeScreenState extends State<HomeScreen> {
       child: Column(
         crossAxisAlignment: alignment,
         children: [
-          // Sender name (only for received messages)
-          if (!isMe)
+          // Sender name (only for received, first in sequence)
+          if (showSenderName)
             Padding(
               padding: const EdgeInsets.only(left: 12, bottom: 4),
               child: Text(
@@ -132,45 +139,43 @@ class _HomeScreenState extends State<HomeScreen> {
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               if (isMe) const Spacer(),
-              Flexible(
-                child: Container(
-                  constraints: BoxConstraints(
-                    maxWidth: MediaQuery.of(context).size.width * 0.75,
-                  ),
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: bubbleColor,
-                    borderRadius: borderRadius,
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.05),
-                        blurRadius: 4,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Message text
-                      SelectableText(
-                        payload.data ?? '',
-                        style: TextStyle(fontSize: 15, color: textColor),
-                      ),
-                      const SizedBox(height: 4),
-                      // Time + copy button
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            timeString,
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: isMe
-                                  ? Colors.white.withOpacity(0.7)
-                                  : AppTheme.textMuted,
-                            ),
-                          ),
+              // Wider bubble with small margin from edge
+              Container(
+                constraints: BoxConstraints(
+                  maxWidth: MediaQuery.of(context).size.width * 0.85,
+                ),
+                margin: const EdgeInsets.symmetric(horizontal: 8), // keeps bubble away from screen edge
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                decoration: BoxDecoration(
+                  color: bubbleColor,
+                  borderRadius: borderRadius,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.05),
+                      blurRadius: 4,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Message text
+                    SelectableText(
+                      payload.data ?? '',
+                      style: TextStyle(fontSize: 15, color: textColor),
+                    ),
+                    const SizedBox(height: 4),
+                    // Time + copy (right aligned)
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          timeString,
+                          style: TextStyle(fontSize: 11, color: timeCopyColor),
+                        ),
+                        if (!isMe) ...[
                           const SizedBox(width: 8),
                           GestureDetector(
                             onTap: () {
@@ -187,15 +192,13 @@ class _HomeScreenState extends State<HomeScreen> {
                             child: Icon(
                               Icons.copy,
                               size: 14,
-                              color: isMe
-                                  ? Colors.white.withOpacity(0.7)
-                                  : AppTheme.textMuted,
+                              color: timeCopyColor,
                             ),
                           ),
                         ],
-                      ),
-                    ],
-                  ),
+                      ],
+                    ),
+                  ],
                 ),
               ),
               if (!isMe) const Spacer(),
@@ -207,7 +210,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
-// ----- SmartInputBar (unchanged except maybe padding) -----
+// ---- Smart Input Bar (unchanged) ----
 class SmartInputBar extends StatefulWidget {
   const SmartInputBar({Key? key}) : super(key: key);
 
@@ -266,8 +269,7 @@ class _SmartInputBarState extends State<SmartInputBar> {
             backgroundColor: AppTheme.accentColor,
             radius: 20,
             child: IconButton(
-              icon:
-                  const Icon(Icons.arrow_upward, color: Colors.white, size: 20),
+              icon: const Icon(Icons.arrow_upward, color: Colors.white, size: 20),
               onPressed: _sendText,
             ),
           ),
