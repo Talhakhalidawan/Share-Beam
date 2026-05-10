@@ -16,39 +16,40 @@ class DiscoveryService {
 
   /// Start advertising this device on the local network.
   Future<void> startHost(String deviceName, int port) async {
-    // Stop any existing broadcast first to avoid conflicts.
-    await stopHost();
+    // If already broadcasting, skip.
+    if (_broadcast != null) return;
 
     final service = BonsoirService(
       name: deviceName,
       type: serviceType,
       port: port,
-      // Optional: add TXT records for additional info if needed.
     );
 
-    _broadcast = BonsoirBroadcast(service: service);
-    await _broadcast!.start();
+    try {
+      _broadcast = BonsoirBroadcast(service: service);
+      await _broadcast!.start();
+    } catch (e) {
+      print('[DiscoveryService] Error starting broadcast: $e');
+      _broadcast = null;  // mark as failed, no rethrow
+      // AppState will simply show a warning, but the server remains active.
+    }
   }
 
-  /// Stop advertising.
   Future<void> stopHost() async {
     if (_broadcast == null) return;
     try {
       await _broadcast!.stop();
     } catch (e) {
-      print('[DiscoveryService] Error stopping broadcast: $e');
+      print('[DiscoveryService] Warning (stopHost): $e');
     }
     _broadcast = null;
   }
 
-  /// Begin scanning for other ShareBeam hosts.
   Future<void> startDiscovery() async {
-    // Stop any running discovery first.
     await stopDiscovery();
 
     _discovery = BonsoirDiscovery(type: serviceType);
 
-    // The eventStream could be null if the platform doesn't support mDNS (web).
     final stream = _discovery!.eventStream;
     if (stream == null) {
       print('[DiscoveryService] mDNS discovery not available on this platform.');
@@ -68,7 +69,6 @@ class DiscoveryService {
           final host = resolved.host;
           if (host == null || host.isEmpty) return;
 
-          // Remove any existing entry with same ip & port to avoid duplicates.
           _discoveredDevices.removeWhere(
             (d) => d.ip == host && d.port == resolved.port,
           );
@@ -99,20 +99,18 @@ class DiscoveryService {
     await _discovery!.start();
   }
 
-  /// Stop scanning for hosts and clear the device list.
   Future<void> stopDiscovery() async {
     if (_discovery == null) return;
     try {
       await _discovery!.stop();
     } catch (e) {
-      print('[DiscoveryService] Error stopping discovery: $e');
+      print('[DiscoveryService] Warning (stopDiscovery): $e');
     }
     _discovery = null;
     _discoveredDevices.clear();
     _devicesController.add([]);
   }
 
-  /// Clean up all resources.
   void dispose() {
     stopHost();
     stopDiscovery();

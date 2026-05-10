@@ -13,6 +13,7 @@ import '../core/models.dart';
 class TransferService {
   HttpServer? _server;
   final List<WebSocketChannel> _clients = [];
+  final Map<WebSocketChannel, String> _clientNames = {}; // channel -> device name
   final Map<String, File> _hostedFiles = {};
 
   final _payloadController = StreamController<SharePayload>.broadcast();
@@ -27,16 +28,19 @@ class TransferService {
   Stream<String> get connectionStatusStream =>
       _connectionStatusController.stream;
 
+  // Stream of current connected client names (for the host)
+  final _connectedClientsController =
+      StreamController<List<String>>.broadcast();
+  Stream<List<String>> get connectedClientsStream =>
+      _connectedClientsController.stream;
+
   WebSocketChannel? _activeClientChannel;
 
-  /// Start the host server on [port] bound to all network interfaces.
   Future<void> startServer(int port) async {
-    // Stop any existing server first.
     await stopServer();
 
     final router = Router();
 
-    // WebSocket signaling hub at /ws
     router.get('/ws', webSocketHandler((WebSocketChannel channel, String? protocol) {
       _clients.add(channel);
       _connectionStatusController
@@ -44,47 +48,65 @@ class TransferService {
 
       channel.stream.listen(
         (message) {
-          // Process message locally
-          _handleIncomingMessage(message);
+          if (message is String) {
+            try {
+              final data = jsonDecode(message);
+              if (data is! Map<String, dynamic>) return;   // ignore non-map messages
 
-          // Relay to all OTHER connected clients (hub behaviour)
-          final data = message is String ? message : null;
-          if (data == null) return; // ignore binary
-          for (final client in _clients) {
-            if (client != channel) {
-              try {
-                client.sink.add(data);
-              } catch (e) {
-                // Failed to send, remove client
-                _clients.remove(client);
-                _connectionStatusController
-                    .add('Client removed (send error). Total: ${_clients.length}');
+              // Check for handshake
+              if (data['type'] == 'handshake') {
+                final name = data['senderName'] ?? 'Unknown';
+                _clientNames[channel] = name;
+                _emitConnectedClients();
+                return;
               }
+
+              // Try to parse as SharePayload
+              final payload = SharePayload.fromJson(data);
+              _payloadController.add(payload);
+
+              final encoded = message;
+              for (final client in _clients) {
+                if (client != channel) {
+                  try {
+                    client.sink.add(encoded);
+                  } catch (_) {
+                    _clients.remove(client);
+                    _clientNames.remove(client);
+                    _emitConnectedClients();
+                  }
+                }
+              }
+            } catch (e) {
+              // Ignore malformed messages
+              print('[TransferService] Ignoring malformed message: $e');
             }
           }
         },
         onDone: () {
           _clients.remove(channel);
+          _clientNames.remove(channel);
+          _emitConnectedClients();
           _connectionStatusController
               .add('Client disconnected. Total: ${_clients.length}');
         },
         onError: (e) {
-          print('[TransferService] WebSocket stream error: $e');
+          print('[TransferService] WebSocket error: $e');
           _clients.remove(channel);
+          _clientNames.remove(channel);
+          _emitConnectedClients();
         },
       );
     }));
 
-    // HTTP endpoint for large file downloads (stub for later)
+    // file download endpoint (stub)
     router.get('/download/<id>', (Request request, String id) async {
       final file = _hostedFiles[id];
       if (file == null || !await file.exists()) {
         return Response.notFound('File not found');
       }
-
       final stat = await file.stat();
       final fileStream = file.openRead();
-
       return Response.ok(
         fileStream,
         headers: {
@@ -98,20 +120,23 @@ class TransferService {
 
     final handler = const Pipeline().addHandler(router.call);
     _server = await shelf_io.serve(handler, '0.0.0.0', port);
-    _connectionStatusController
-        .add('Host server started on port $port');
     print('[TransferService] Server running on 0.0.0.0:$port');
   }
 
-  /// Shut down the host server and disconnect all clients.
+  void _emitConnectedClients() {
+    final names = _clientNames.values.toList();
+    _connectedClientsController.add(names);
+  }
+
   Future<void> stopServer() async {
-    // Close all WebSocket connections
     for (final client in _clients) {
       try {
         await client.sink.close();
       } catch (_) {}
     }
     _clients.clear();
+    _clientNames.clear();
+    _emitConnectedClients();
 
     if (_server != null) {
       await _server!.close(force: true);
@@ -120,27 +145,39 @@ class TransferService {
     _hostedFiles.clear();
   }
 
-  /// Connect this device as a client to a remote host at [ip]:[port].
   Future<bool> connectToHost(String ip, int port) async {
-    // Disconnect any existing connection first.
     disconnectFromHost();
-
     try {
       final uri = Uri.parse('ws://$ip:$port/ws');
       _activeClientChannel = WebSocketChannel.connect(uri);
       await _activeClientChannel!.ready;
 
+      // Send handshake with our device name (AppState will provide it)
+      // We'll need a reference to the device name; we'll do that via sendHandshake.
+      // For now, we'll leave a placeholder; the AppState will call sendHandshake after connecting.
+      // We'll adjust connectToHost to accept a deviceName.
+      // Instead, let's add a method sendHandshake that AppState calls after connect.
+      
       _connectionStatusController.add('Connected to $ip:$port');
 
       _activeClientChannel!.stream.listen(
-        (message) => _handleIncomingMessage(message),
+        (message) {
+          if (message is String) {
+            try {
+              final data = jsonDecode(message);
+              final payload = SharePayload.fromJson(data);
+              _payloadController.add(payload);
+            } catch (e) {
+              print('[TransferService] Error decoding payload: $e');
+            }
+          }
+        },
         onDone: () {
           _activeClientChannel = null;
           _connectionStatusController.add('Disconnected from host');
         },
         onError: (e) {
           print('[TransferService] WebSocket error: $e');
-          _connectionStatusController.add('Connection error: $e');
           _activeClientChannel?.sink.close();
           _activeClientChannel = null;
         },
@@ -154,29 +191,26 @@ class TransferService {
     }
   }
 
-  /// Disconnect from the remote host.
+  /// Send a handshake message (must be called right after connectToHost succeeds).
+  void sendHandshake(String deviceName) {
+    if (_activeClientChannel == null) return;
+    final handshake = jsonEncode({
+      'type': 'handshake',
+      'senderName': deviceName,
+    });
+    try {
+      _activeClientChannel!.sink.add(handshake);
+    } catch (e) {
+      print('[TransferService] Handshake failed: $e');
+    }
+  }
+
   void disconnectFromHost() {
     if (_activeClientChannel == null) return;
     _activeClientChannel!.sink.close();
     _activeClientChannel = null;
   }
 
-  /// Process an incoming WebSocket message (JSON string) into a SharePayload
-  /// and add it to the local stream.
-  void _handleIncomingMessage(dynamic message) {
-    if (message is! String) return;
-    try {
-      final data = jsonDecode(message) as Map<String, dynamic>;
-      final payload = SharePayload.fromJson(data);
-      _payloadController.add(payload);
-    } catch (e) {
-      print('[TransferService] Error decoding payload: $e');
-    }
-  }
-
-  /// Send a [payload] to all connected clients (if hosting) or to the host
-  /// (if a client). For file transfers, register the [fileToHost] for future
-  /// HTTP downloads.
   Future<void> sendPayload(SharePayload payload, {File? fileToHost}) async {
     if (fileToHost != null) {
       _hostedFiles[payload.id] = fileToHost;
@@ -184,18 +218,18 @@ class TransferService {
 
     final messageJson = jsonEncode(payload.toJson());
 
-    // If we are hosting, send to all connected clients.
-    if (_clients.isNotEmpty) {
-      for (final client in List<WebSocketChannel>.from(_clients)) {
-        try {
-          client.sink.add(messageJson);
-        } catch (_) {
-          _clients.remove(client);
-        }
+    // If hosting, send to all clients
+    for (final client in List<WebSocketChannel>.from(_clients)) {
+      try {
+        client.sink.add(messageJson);
+      } catch (_) {
+        _clients.remove(client);
+        _clientNames.remove(client);
+        _emitConnectedClients();
       }
     }
 
-    // If we are a client, send to the host.
+    // If client, send to host
     if (_activeClientChannel != null) {
       try {
         _activeClientChannel!.sink.add(messageJson);
@@ -207,34 +241,26 @@ class TransferService {
     }
   }
 
-  /// Download a large file from a remote host (stub for later).
   Future<File?> downloadFile(
       String ip, int port, String id, String fileName, String saveDirectory) async {
     final url = Uri.parse('http://$ip:$port/download/$id');
     final httpClient = HttpClient();
-
     try {
       final request = await httpClient.getUrl(url);
       final response = await request.close();
-
       if (response.statusCode == 200) {
         final contentLength = response.contentLength;
         final savePath = '$saveDirectory/$fileName';
         final file = File(savePath);
         final sink = file.openWrite();
-
         int receivedBytes = 0;
-
         await for (final chunk in response) {
           sink.add(chunk);
           receivedBytes += chunk.length;
-
           if (contentLength > 0) {
-            final progress = receivedBytes / contentLength;
-            _progressController.add({id: progress});
+            _progressController.add({id: receivedBytes / contentLength});
           }
         }
-
         await sink.close();
         _progressController.add({id: 1.0});
         return file;
@@ -247,12 +273,12 @@ class TransferService {
     return null;
   }
 
-  /// Clean up all resources.
   void dispose() {
     stopServer();
     disconnectFromHost();
     _payloadController.close();
     _progressController.close();
     _connectionStatusController.close();
+    _connectedClientsController.close();
   }
 }
