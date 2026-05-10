@@ -19,7 +19,6 @@ class DiscoveryService {
       port: port,
     );
     _broadcast = BonsoirBroadcast(service: service);
-    await _broadcast!.ready;
     await _broadcast!.start();
   }
 
@@ -32,16 +31,15 @@ class DiscoveryService {
 
   Future<void> startDiscovery() async {
     _discovery = BonsoirDiscovery(type: serviceType);
-    await _discovery!.ready;
     
     _discovery!.eventStream!.listen((event) {
-      if (event.type == BonsoirDiscoveryEventType.discoveryServiceFound) {
+      if (event is BonsoirDiscoveryServiceFoundEvent) {
         if (event.service != null) {
           event.service!.resolve(_discovery!.serviceResolver);
         }
-      } else if (event.type == BonsoirDiscoveryEventType.discoveryServiceResolved) {
-        if (event.service != null && event.service is ResolvedBonsoirService) {
-          final resolved = event.service as ResolvedBonsoirService;
+      } else if (event is BonsoirDiscoveryServiceResolvedEvent) {
+        if (event.service != null) {
+          final resolved = event.service!;
           final host = resolved.host;
           if (host != null && host.isNotEmpty) {
             _discoveredDevices.removeWhere((d) => d.ip == host);
@@ -53,7 +51,7 @@ class DiscoveryService {
             _devicesController.add(List.from(_discoveredDevices));
           }
         }
-      } else if (event.type == BonsoirDiscoveryEventType.discoveryServiceLost) {
+      } else if (event is BonsoirDiscoveryServiceLostEvent) {
         if (event.service != null) {
            _discoveredDevices.removeWhere((d) => d.name == event.service!.name);
            _devicesController.add(List.from(_discoveredDevices));

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../../core/app_state.dart';
 import '../shared/theme.dart';
@@ -33,6 +34,37 @@ class _SettingsScreenState extends State<SettingsScreen> {
           children: [
             _buildSegmentedControl(),
             const SizedBox(height: 24),
+            // Show connection status banner
+            if (appState.connectionStatus.isNotEmpty) ...[
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                decoration: BoxDecoration(
+                  color: appState.connectionStatus.contains('Failed') || appState.connectionStatus.contains('error')
+                    ? Colors.red.shade50
+                    : Colors.green.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      appState.connectionStatus.contains('Failed') || appState.connectionStatus.contains('error')
+                        ? Icons.error_outline
+                        : Icons.check_circle_outline,
+                      size: 18,
+                      color: appState.connectionStatus.contains('Failed') || appState.connectionStatus.contains('error')
+                        ? Colors.red
+                        : Colors.green,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(child: Text(
+                      appState.connectionStatus,
+                      style: TextStyle(fontSize: 13, color: Colors.grey.shade800),
+                    )),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
             _tabIndex == 0 ? _buildHostTab(appState) : _buildJoinTab(appState),
           ],
         ),
@@ -111,19 +143,30 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
         const SizedBox(height: 16),
         if (appState.isHosting) ...[
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              border: Border.all(color: AppTheme.borderColor),
-              borderRadius: BorderRadius.circular(16),
-              color: AppTheme.surfaceHover,
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(appState.localIp, style: const TextStyle(fontSize: 16, letterSpacing: -0.5, fontWeight: FontWeight.w500)),
-                const Text('Local IP', style: TextStyle(fontSize: 13, color: AppTheme.textMuted)),
-              ],
+          GestureDetector(
+            onTap: () {
+              Clipboard.setData(ClipboardData(text: appState.localIp));
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('IP copied to clipboard'), duration: Duration(seconds: 1)),
+              );
+            },
+            child: Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                border: Border.all(color: AppTheme.borderColor),
+                borderRadius: BorderRadius.circular(16),
+                color: AppTheme.surfaceHover,
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    '${appState.localIp}:${AppState.serverPort}',
+                    style: const TextStyle(fontSize: 16, letterSpacing: -0.5, fontWeight: FontWeight.w500),
+                  ),
+                  const Text('tap to copy', style: TextStyle(fontSize: 13, color: AppTheme.textMuted)),
+                ],
+              ),
             ),
           ),
           const SizedBox(height: 32),
@@ -132,6 +175,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
             style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppTheme.textMuted, letterSpacing: 1),
           ),
           const SizedBox(height: 16),
+          if (appState.connectedDevices.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 16),
+              child: Text('No devices connected yet', style: TextStyle(color: AppTheme.textMuted, fontSize: 13)),
+            ),
           ...appState.connectedDevices.map((d) => Padding(
             padding: const EdgeInsets.only(bottom: 12),
             child: Row(
@@ -145,7 +193,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 Text(d.ip, style: const TextStyle(fontSize: 12, color: AppTheme.textMuted)),
               ],
             ),
-          )).toList(),
+          )),
         ]
       ],
     );
@@ -160,7 +208,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                child: TextField(
                  controller: _ipController,
                  decoration: InputDecoration(
-                   hintText: 'Enter Host IP',
+                   hintText: 'Enter Host IP (e.g. 192.168.1.42)',
                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                    contentPadding: const EdgeInsets.symmetric(horizontal: 16),
                  ),
@@ -174,18 +222,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
                  minimumSize: const Size(0, 48),
                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))
                ),
-               onPressed: () {
-                 if (_ipController.text.isNotEmpty) {
-                    appState.connectTo(_ipController.text, 8080);
-                 }
-               },
-               child: const Text('Join'),
+               onPressed: appState.isConnectedToHost
+                 ? () => appState.disconnectFromHost()
+                 : () {
+                     String ip = _ipController.text.trim();
+                     int port = AppState.serverPort;
+                     
+                     if (ip.contains(':')) {
+                       final parts = ip.split(':');
+                       ip = parts[0];
+                       port = int.tryParse(parts[1]) ?? AppState.serverPort;
+                     }
+                     
+                     if (ip.isNotEmpty) {
+                       appState.connectTo(ip, port);
+                     }
+                   },
+               child: Text(appState.isConnectedToHost ? 'Disconnect' : 'Join'),
              )
            ],
          ),
          const SizedBox(height: 32),
-         appState.connectedDevices.isNotEmpty 
-           ? Column(
+         if (appState.connectedDevices.isNotEmpty) 
+           Column(
              crossAxisAlignment: CrossAxisAlignment.start,
              children: [
                const Text('Found Hosts via mDNS', style: TextStyle(fontWeight: FontWeight.w600, color: AppTheme.textMuted)),
@@ -194,11 +253,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                  title: Text(d.name),
                  subtitle: Text(d.ip),
                  trailing: const Icon(Icons.wifi),
-                 onTap: () => appState.connectTo(d.ip, 8080),
-               )).toList(),
+                 onTap: () => appState.connectTo(d.ip, d.port),
+               )),
              ],
            )
-           : Column(
+         else
+           Column(
              children: const [
                Icon(Icons.radar, size: 32, color: Colors.grey),
                SizedBox(height: 8),
