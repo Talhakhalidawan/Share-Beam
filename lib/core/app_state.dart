@@ -54,7 +54,7 @@ class AppState extends ChangeNotifier {
     _transferService.payloadStream.listen((payload) {
       // Avoid duplicates – payload.id is now a UUID
       if (!history.any((item) => item.id == payload.id)) {
-        history.insert(0, payload);
+        history.add(payload);   // append to end
         notifyListeners();
       }
     });
@@ -221,7 +221,7 @@ class AppState extends ChangeNotifier {
     );
 
     // Insert in our own history
-    history.insert(0, payload);
+    history.add(payload);
     notifyListeners();
 
     await _transferService.sendPayload(payload);

@@ -9,6 +9,7 @@ class SharePayload {
   final int size;
   final String? data; // for text (raw string) or base64 file content
   final String senderName;
+  final DateTime timestamp;   // <-- new field
 
   SharePayload({
     required this.id,
@@ -17,7 +18,8 @@ class SharePayload {
     required this.size,
     this.data,
     required this.senderName,
-  });
+    DateTime? timestamp,
+  }) : timestamp = timestamp ?? DateTime.now();
 
   Map<String, dynamic> toJson() => {
         'id': id,
@@ -26,6 +28,7 @@ class SharePayload {
         'size': size,
         'data': data,
         'senderName': senderName,
+        'timestamp': timestamp.millisecondsSinceEpoch,
       };
 
   factory SharePayload.fromJson(Map<String, dynamic> json) => SharePayload(
@@ -35,6 +38,9 @@ class SharePayload {
         size: json['size'],
         data: json['data'],
         senderName: json['senderName'],
+        timestamp: json['timestamp'] != null
+            ? DateTime.fromMillisecondsSinceEpoch(json['timestamp'])
+            : null,
       );
 
   @override
