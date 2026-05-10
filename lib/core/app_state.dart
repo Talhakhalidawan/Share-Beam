@@ -32,6 +32,7 @@ class AppState extends ChangeNotifier {
   List<DiscoveredDevice> connectedDevices = [];
   List<SharePayload> history = [];
   Map<String, double> downloadsProgress = {};
+  List<String> connectedClientNames = [];
 
   // Getters / Setters for user‑configurable stuff
   String get deviceName => _deviceName.isEmpty
@@ -67,6 +68,11 @@ class AppState extends ChangeNotifier {
       connectionStatus = status;
       notifyListeners();
     });
+
+    _transferService.connectedClientsStream.listen((names) {
+      connectedClientNames = names;
+      notifyListeners();
+    });
   }
 
   Future<void> _initNetwork() async {
@@ -96,13 +102,12 @@ class AppState extends ChangeNotifier {
 
   // Host a server with current deviceName and hostPort
   Future<void> startHosting() async {
-    if (isBusy) return;
+    if (isBusy || isHosting) return;
     isBusy = true;
     notifyListeners();
 
     if (kIsWeb) {
-      connectionStatus =
-          'Hosting not supported on Web. Use Desktop/Mobile.';
+      connectionStatus = 'Hosting not supported on Web. Use Desktop/Mobile.';
       isHosting = false;
       isBusy = false;
       notifyListeners();
@@ -113,9 +118,23 @@ class AppState extends ChangeNotifier {
       connectionStatus = 'Starting server on port $hostPort...';
       notifyListeners();
 
+      // Start the HTTP/WebSocket server (critical)
       await _transferService.startServer(hostPort);
-      await _discoveryService.startHost(deviceName, hostPort);
-      await _discoveryService.startDiscovery();
+
+      // Try mDNS broadcast – if it fails, we still host
+      try {
+        await _discoveryService.startHost(deviceName, hostPort);
+        await _discoveryService.startDiscovery();
+      } catch (e) {
+        print('[AppState] mDNS broadcast failed (non‑critical): $e');
+        connectionStatus =
+            'Server running on $localIp:$hostPort (mDNS unavailable)';
+        // Still mark as hosting, but warn the user
+        isHosting = true;
+        isBusy = false;
+        notifyListeners();
+        return;   // skip the final success message below
+      }
 
       isHosting = true;
       connectionStatus = 'Server running on $localIp:$hostPort';
@@ -168,9 +187,12 @@ class AppState extends ChangeNotifier {
 
     final success = await _transferService.connectToHost(ip, port);
     isConnectedToHost = success;
-    connectionStatus = success
-        ? 'Connected to $ip:$port'
-        : 'Failed to connect to $ip:$port';
+    if (success) {
+      _transferService.sendHandshake(deviceName);
+      connectionStatus = 'Connected to $ip:$port';
+    } else {
+      connectionStatus = 'Failed to connect to $ip:$port';
+    }
 
     isBusy = false;
     notifyListeners();

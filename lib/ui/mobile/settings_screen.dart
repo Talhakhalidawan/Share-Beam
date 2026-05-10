@@ -280,10 +280,38 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 letterSpacing: 1),
           ),
           const SizedBox(height: 16),
-          const Text(
-            'Client list coming soon',
-            style: TextStyle(fontSize: 13, color: AppTheme.textMuted),
-          ),
+          if (appState.connectedClientNames.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 16),
+              child: Text('No clients connected yet',
+                  style: TextStyle(color: AppTheme.textMuted, fontSize: 13)),
+            ),
+          ...appState.connectedClientNames.map((name) => Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppTheme.surfaceHover.withOpacity(0.5),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 8,
+                        height: 8,
+                        decoration: const BoxDecoration(
+                            color: Colors.green, shape: BoxShape.circle),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                          child: Text(name,
+                              style: const TextStyle(
+                                  fontWeight: FontWeight.w500, fontSize: 14))),
+                      const Icon(Icons.devices, size: 16, color: AppTheme.textMuted),
+                    ],
+                  ),
+                ),
+              )),
         ],
       ],
     );
