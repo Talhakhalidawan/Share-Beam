@@ -15,27 +15,32 @@ class TransferService {
   final List<WebSocketChannel> _clients = [];
   final Map<String, File> _hostedFiles = {};
 
-  // Emits incoming share payload (metadata and small files <1MB)
   final _payloadController = StreamController<SharePayload>.broadcast();
   Stream<SharePayload> get payloadStream => _payloadController.stream;
 
-  // Emits download progress <id, progress_percentage>
   final _progressController = StreamController<Map<String, double>>.broadcast();
   Stream<Map<String, double>> get progressStream => _progressController.stream;
 
-  // Active client connection if this instance is acting as a client
+  // Track connection status
+  final _connectionStatusController = StreamController<String>.broadcast();
+  Stream<String> get connectionStatusStream => _connectionStatusController.stream;
+
   WebSocketChannel? _activeClientChannel;
 
-  /// Start the Host Server
-  Future<void> startServer(String hostIp, int port) async {
+  /// Start the Host Server - binds to 0.0.0.0 so all interfaces are reachable
+  Future<void> startServer(int port) async {
     final router = Router();
 
     // The Signaling Hub
-    router.get('/ws', webSocketHandler((WebSocketChannel webSocket) {
+    router.get('/ws', webSocketHandler((WebSocketChannel webSocket, String? protocol) {
       _clients.add(webSocket);
+      _connectionStatusController.add('Client connected. Total: ${_clients.length}');
       webSocket.stream.listen(
         (message) => _handleIncomingMessage(message),
-        onDone: () => _clients.remove(webSocket),
+        onDone: () {
+          _clients.remove(webSocket);
+          _connectionStatusController.add('Client disconnected. Total: ${_clients.length}');
+        },
       );
     }));
 
@@ -60,10 +65,11 @@ class TransferService {
     });
 
     final handler = const Pipeline().addHandler(router.call);
-    _server = await shelf_io.serve(handler, hostIp, port);
+    // Bind to 0.0.0.0 so other devices on the LAN can reach us
+    _server = await shelf_io.serve(handler, '0.0.0.0', port);
+    print('[TransferService] Server running on 0.0.0.0:$port');
   }
 
-  /// Stop the Host Server
   Future<void> stopServer() async {
     for (var client in _clients) {
       await client.sink.close();
@@ -75,27 +81,40 @@ class TransferService {
   }
 
   /// Connect as a Client (Receiver) to a Host
-  Future<void> connectToHost(String ip, int port) async {
-    final uri = Uri.parse('ws://$ip:$port/ws');
-    _activeClientChannel = WebSocketChannel.connect(uri);
-    _activeClientChannel!.stream.listen(
-      (message) => _handleIncomingMessage(message),
-      onDone: () {
-        _activeClientChannel = null;
-      },
-      onError: (e) {
-        print('WebSocket connection error: $e');
-      }
-    );
+  Future<bool> connectToHost(String ip, int port) async {
+    try {
+      final uri = Uri.parse('ws://$ip:$port/ws');
+      _activeClientChannel = WebSocketChannel.connect(uri);
+      // Wait for the connection to actually establish
+      await _activeClientChannel!.ready;
+      
+      _connectionStatusController.add('Connected to $ip:$port');
+
+      _activeClientChannel!.stream.listen(
+        (message) => _handleIncomingMessage(message),
+        onDone: () {
+          _activeClientChannel = null;
+          _connectionStatusController.add('Disconnected from host');
+        },
+        onError: (e) {
+          print('WebSocket stream error: $e');
+          _connectionStatusController.add('Connection error: $e');
+        },
+      );
+      return true;
+    } catch (e) {
+      print('WebSocket connect error: $e');
+      _connectionStatusController.add('Failed to connect: $e');
+      _activeClientChannel = null;
+      return false;
+    }
   }
 
-  /// Disconnect as a Client
   void disconnectFromHost() {
     _activeClientChannel?.sink.close();
     _activeClientChannel = null;
   }
 
-  /// Handles incoming JSON metadata string from WebSockets
   void _handleIncomingMessage(dynamic message) {
     if (message is String) {
       try {
@@ -108,8 +127,6 @@ class TransferService {
     }
   }
 
-  /// Send metadata (and payload data if < 1MB) via WebSocket.
-  /// If it's a large file, pass the `fileToHost` so it can be served.
   Future<void> sendPayload(SharePayload payload, {File? fileToHost}) async {
     if (fileToHost != null) {
       _hostedFiles[payload.id] = fileToHost;
@@ -117,18 +134,15 @@ class TransferService {
 
     final messageJson = jsonEncode(payload.toJson());
 
-    // Host sends to all connected clients
     for (var client in _clients) {
       client.sink.add(messageJson);
     }
 
-    // Client sends to Host
     if (_activeClientChannel != null) {
       _activeClientChannel!.sink.add(messageJson);
     }
   }
 
-  /// Receiver fetches a large file over HTTP using [id] from the `SharePayload`
   Future<File?> downloadFile(String ip, int port, String id, String fileName, String saveDirectory) async {
     final url = Uri.parse('http://$ip:$port/download/$id');
     final httpClient = HttpClient();
@@ -156,7 +170,7 @@ class TransferService {
         }
         
         await sink.close();
-        _progressController.add({id: 1.0}); // Done
+        _progressController.add({id: 1.0});
         return file;
       }
     } catch (e) {

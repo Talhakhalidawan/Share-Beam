@@ -20,7 +20,7 @@ class AppTheme {
         surface: surfaceColor,
         onSurface: textMain,
       ),
-      cardTheme: CardTheme(
+      cardTheme: CardThemeData(
         color: surfaceColor,
         elevation: 0,
         shape: RoundedRectangleBorder(

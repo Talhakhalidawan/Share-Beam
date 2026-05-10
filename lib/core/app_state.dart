@@ -1,4 +1,4 @@
-import 'dart:io';
+import 'dart:io' as io;
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 
@@ -11,10 +11,14 @@ class AppState extends ChangeNotifier {
   final TransferService _transferService = TransferService();
 
   bool isHosting = false;
+  bool isConnectedToHost = false;
   String localIp = '127.0.0.1';
+  String connectionStatus = '';
   List<DiscoveredDevice> connectedDevices = [];
   List<SharePayload> history = [];
   Map<String, double> downloadsProgress = {};
+
+  static const int serverPort = 8080;
 
   AppState() {
     _initNetwork();
@@ -32,16 +36,30 @@ class AppState extends ChangeNotifier {
       downloadsProgress.addAll(progressMap);
       notifyListeners();
     });
+
+    _transferService.connectionStatusStream.listen((status) {
+      connectionStatus = status;
+      notifyListeners();
+    });
   }
 
   Future<void> _initNetwork() async {
+    if (kIsWeb) {
+      localIp = 'Web-Client';
+      notifyListeners();
+      return;
+    }
     try {
-      final interfaces = await NetworkInterface.list(type: InternetAddressType.IPv4, includeLinkLocal: true);
+      final interfaces = await io.NetworkInterface.list(
+        type: io.InternetAddressType.IPv4,
+        includeLinkLocal: false,
+      );
       for (var interface in interfaces) {
         for (var addr in interface.addresses) {
-          if (!addr.isLoopback && addr.address.startsWith('192.168')) {
-             localIp = addr.address;
-             notifyListeners();
+          if (!addr.isLoopback) {
+            localIp = addr.address;
+            notifyListeners();
+            return; // Use the first non-loopback IPv4
           }
         }
       }
@@ -51,31 +69,63 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> toggleHosting(bool enable) async {
-    isHosting = enable;
     if (enable) {
-      const port = 8080; 
-      await _transferService.startServer(localIp, port);
-      await _discoveryService.startHost('ShareBeam Host', port);
-      await _discoveryService.startDiscovery();
+      if (kIsWeb) {
+        connectionStatus = 'Failed: Hosting is not supported on Web Browsers. Please compile & run as a Native App (Linux/Windows/macOS or Mobile).';
+        isHosting = false;
+        notifyListeners();
+        return;
+      }
+      try {
+        await _transferService.startServer(serverPort);
+        await _discoveryService.startHost('ShareBeam Host', serverPort);
+        await _discoveryService.startDiscovery();
+        isHosting = true;
+        connectionStatus = 'Server running on $localIp:$serverPort';
+      } catch (e) {
+        connectionStatus = 'Failed to start server: $e';
+        isHosting = false;
+      }
     } else {
-      await _discoveryService.stopHost();
-      await _discoveryService.stopDiscovery();
-      await _transferService.stopServer();
+      if (!kIsWeb) {
+         await _discoveryService.stopHost();
+         await _discoveryService.stopDiscovery();
+         await _transferService.stopServer();
+      }
       connectedDevices.clear();
+      isHosting = false;
+      connectionStatus = '';
     }
     notifyListeners();
   }
 
   Future<void> connectTo(String ip, int port) async {
-    await _transferService.connectToHost(ip, port);
+    connectionStatus = 'Connecting to $ip:$port...';
+    notifyListeners();
+
+    final success = await _transferService.connectToHost(ip, port);
+    isConnectedToHost = success;
+    if (success) {
+      connectionStatus = 'Connected to $ip:$port';
+    } else {
+      connectionStatus = 'Failed to connect to $ip:$port';
+    }
+    notifyListeners();
   }
 
   Future<void> disconnectFromHost() async {
-    _transferService.disconnectFromHost();
+    if (!kIsWeb) {
+       _transferService.disconnectFromHost();
+    }
+    isConnectedToHost = false;
+    connectionStatus = '';
+    notifyListeners();
   }
 
   Future<void> shareText(String text) async {
     if (text.isEmpty) return;
+    
+    final senderName = kIsWeb ? 'Web User' : io.Platform.localHostname;
     
     final payload = SharePayload(
       id: DateTime.now().millisecondsSinceEpoch.toString(),
@@ -83,22 +133,27 @@ class AppState extends ChangeNotifier {
       fileName: 'Text Message',
       size: text.length,
       data: text,
-      senderName: Platform.localHostname,
+      senderName: senderName,
     );
     history.insert(0, payload);
     notifyListeners();
     await _transferService.sendPayload(payload);
   }
 
-  Future<void> shareFile(File file) async {
+  Future<void> shareFile(io.File file) async {
+     if (kIsWeb) {
+        connectionStatus = 'File sharing natively unsupported on Web Client';
+        notifyListeners();
+        return;
+     }
      final stat = await file.stat();
      
      final payload = SharePayload(
        id: DateTime.now().millisecondsSinceEpoch.toString(),
        type: FileTransferType.file,
-       fileName: file.path.split(Platform.pathSeparator).last,
+       fileName: file.path.split(io.Platform.pathSeparator).last,
        size: stat.size,
-       senderName: Platform.localHostname,
+       senderName: io.Platform.localHostname,
      );
      
      history.insert(0, payload);
@@ -107,10 +162,17 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> downloadLargeFile(String ip, int port, String id, String fileName) async {
+    if (kIsWeb) {
+        connectionStatus = 'File downloading natively unsupported on Web Client';
+        notifyListeners();
+        return;
+    }
     final dir = await getApplicationDocumentsDirectory();
     final downloadedFile = await _transferService.downloadFile(ip, port, id, fileName, dir.path);
     if (downloadedFile != null) {
        print('File downloaded to ${downloadedFile.path}');
+       connectionStatus = 'File downloaded to ${downloadedFile.path}';
+       notifyListeners();
     }
   }
 }
