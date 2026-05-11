@@ -3,14 +3,20 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
+import 'package:shelf_router/shelf_router.dart';
 
 import '../services/discovery_service.dart';
-import '../services/transfer_service.dart';
+import '../services/host_service.dart';
+import '../services/client_service.dart';
+import '../services/file_transfer_service.dart';
+import '../services/network_service.dart';
 import 'models.dart';
 
 class AppState extends ChangeNotifier {
   final DiscoveryService _discoveryService = DiscoveryService();
-  final TransferService _transferService = TransferService();
+  final HostService _hostService = HostService();
+  final ClientService _clientService = ClientService();
+  final FileTransferService _fileTransferService = FileTransferService();
   final Uuid _uuid = const Uuid();
 
   String _deviceName = '';
@@ -46,64 +52,58 @@ class AppState extends ChangeNotifier {
 
   AppState() {
     _initNetwork();
+    
+    // Discovery
     _discoveryService.devicesStream.listen((devices) {
       discoveredHosts = devices;
       notifyListeners();
     });
 
-    _transferService.payloadStream.listen((payload) {
-      if (!history.any((item) => item.id == payload.id)) {
-        history.add(payload);
-        notifyListeners();
-      }
-    });
-
-    _transferService.progressStream.listen((progressMap) {
-      downloadsProgress.addAll(progressMap);
-      notifyListeners();
-    });
-
-    _transferService.connectionStatusStream.listen((status) {
+    // Hosting Streams
+    _hostService.payloadStream.listen(_handleIncomingPayload);
+    _hostService.clientListStream.listen(_handleClientListUpdate);
+    _hostService.statusStream.listen((status) {
       connectionStatus = status;
       notifyListeners();
     });
 
-    _transferService.clientListStream.listen((rawList) {
-      participants = rawList.map((name) {
-        if (name == '$_deviceName (Host)') {
-          return '$deviceName (Host, You)';
-        } else if (name == deviceName) {
-          return '$deviceName (You)';
-        }
-        return name;
-      }).toList();
+    // Client Streams
+    _clientService.payloadStream.listen(_handleIncomingPayload);
+    _clientService.clientListStream.listen(_handleClientListUpdate);
+    _clientService.statusStream.listen((status) {
+      connectionStatus = status;
+      notifyListeners();
+    });
+
+    // Progress
+    _fileTransferService.progressStream.listen((progressMap) {
+      downloadsProgress.addAll(progressMap);
       notifyListeners();
     });
   }
 
-  Future<void> _initNetwork() async {
-    if (kIsWeb) {
-      localIp = 'Web-Client';
+  void _handleIncomingPayload(SharePayload payload) {
+    if (!history.any((item) => item.id == payload.id)) {
+      history.add(payload);
       notifyListeners();
-      return;
     }
-    try {
-      final interfaces = await io.NetworkInterface.list(
-        type: io.InternetAddressType.IPv4,
-        includeLinkLocal: false,
-      );
-      for (var interface in interfaces) {
-        for (var addr in interface.addresses) {
-          if (!addr.isLoopback) {
-            localIp = addr.address;
-            notifyListeners();
-            return;
-          }
-        }
+  }
+
+  void _handleClientListUpdate(List<String> rawList) {
+    participants = rawList.map((name) {
+      if (name == '$_deviceName (Host)') {
+        return '$deviceName (Host, You)';
+      } else if (name == deviceName) {
+        return '$deviceName (You)';
       }
-    } catch (e) {
-      print('Network lookup error: $e');
-    }
+      return name;
+    }).toList();
+    notifyListeners();
+  }
+
+  Future<void> _initNetwork() async {
+    localIp = await NetworkService.getLocalIp();
+    notifyListeners();
   }
 
   Future<void> startHosting() async {
@@ -122,10 +122,10 @@ class AppState extends ChangeNotifier {
       connectionStatus = 'Starting server on port $hostPort...';
       notifyListeners();
 
-      // Start the WebSocket/HTTP server
-      await _transferService.startServer(hostPort, hostName: deviceName);
+      final router = Router();
+      _fileTransferService.setupRoutes(router);
+      await _hostService.startServer(hostPort, deviceName, router);
 
-      // Start mDNS advertising (non‑critical)
       try {
         await _discoveryService.startHost(deviceName, hostPort);
       } catch (e) {
@@ -152,7 +152,8 @@ class AppState extends ChangeNotifier {
       try {
         await _discoveryService.stopHost();
         await _discoveryService.stopDiscovery();
-        await _transferService.stopServer();
+        await _hostService.stopServer();
+        _fileTransferService.clearHostedFiles();
       } catch (e) {
         print('Error stopping server: $e');
       }
@@ -192,10 +193,10 @@ class AppState extends ChangeNotifier {
     connectionStatus = 'Connecting to $ip:$port...';
     notifyListeners();
 
-    final success = await _transferService.connectToHost(ip, port);
+    final success = await _clientService.connect(ip, port);
     isConnectedToHost = success;
     if (success) {
-      _transferService.sendHandshake(deviceName);
+      _clientService.sendHandshake(deviceName);
       connectionStatus = 'Connected to $ip:$port';
     } else {
       connectionStatus = 'Failed to connect to $ip:$port';
@@ -207,14 +208,13 @@ class AppState extends ChangeNotifier {
 
   Future<void> disconnectFromHost() async {
     if (!kIsWeb) {
-      _transferService.disconnectFromHost();
+      _clientService.disconnect();
     }
     isConnectedToHost = false;
     connectionStatus = '';
     notifyListeners();
   }
 
-  // -------- Text sharing ---------
   Future<void> shareText(String text) async {
     if (text.isEmpty) return;
 
@@ -230,10 +230,13 @@ class AppState extends ChangeNotifier {
     history.add(payload);
     notifyListeners();
 
-    await _transferService.sendPayload(payload);
+    if (isHosting) {
+      _hostService.sendPayload(payload);
+    } else if (isConnectedToHost) {
+      _clientService.sendPayload(payload);
+    }
   }
 
-  // -------- File sharing (stubs) ---------
   Future<void> shareFile(io.File file) async {
     if (kIsWeb) {
       connectionStatus = 'File sharing not supported on Web Client';
@@ -242,7 +245,6 @@ class AppState extends ChangeNotifier {
     }
 
     final stat = await file.stat();
-
     final payload = SharePayload(
       id: _uuid.v4(),
       type: FileTransferType.file,
@@ -253,7 +255,14 @@ class AppState extends ChangeNotifier {
 
     history.add(payload);
     notifyListeners();
-    await _transferService.sendPayload(payload, fileToHost: file);
+
+    _fileTransferService.hostFile(payload.id, file);
+
+    if (isHosting) {
+      _hostService.sendPayload(payload);
+    } else if (isConnectedToHost) {
+      _clientService.sendPayload(payload);
+    }
   }
 
   Future<void> downloadLargeFile(
@@ -265,8 +274,14 @@ class AppState extends ChangeNotifier {
     }
 
     final dir = await getApplicationDocumentsDirectory();
-    final downloadedFile =
-        await _transferService.downloadFile(ip, port, id, fileName, dir.path);
+    final downloadedFile = await _fileTransferService.downloadFile(
+      ip: ip,
+      port: port,
+      id: id,
+      fileName: fileName,
+      saveDirectory: dir.path,
+    );
+    
     if (downloadedFile != null) {
       connectionStatus = 'File downloaded: ${downloadedFile.path}';
       notifyListeners();
@@ -276,7 +291,9 @@ class AppState extends ChangeNotifier {
   @override
   void dispose() {
     _discoveryService.dispose();
-    _transferService.dispose();
+    _hostService.dispose();
+    _clientService.dispose();
+    _fileTransferService.dispose();
     super.dispose();
   }
 }
