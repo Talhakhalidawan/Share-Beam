@@ -70,6 +70,15 @@ class AppState extends ChangeNotifier {
     _clientService.clientListStream.listen(_handleClientListUpdate);
     _clientService.statusStream.listen((status) => _setStatus(status));
 
+    // When the host drops the connection, reset the client state
+    _clientService.disconnectedStream.listen((_) {
+      isConnectedToHost = false;
+      participants.clear();
+      discoveredHosts.clear();
+      _discoveryService.clearResults();
+      _setStatus('The host has stopped the server. You have been disconnected.');
+    });
+
     // Progress
     _fileTransferService.progressStream.listen((progressMap) {
       downloadsProgress.addAll(progressMap);
@@ -107,11 +116,15 @@ class AppState extends ChangeNotifier {
   }
 
   void _handleClientListUpdate(List<String> rawList) {
+    final myName = deviceName;
     participants = rawList.map((name) {
-      if (name == '$_deviceName (Host)') {
-        return '$deviceName (Host, You)';
-      } else if (name == deviceName) {
-        return '$deviceName (You)';
+      // Check if this entry is us as host
+      if (name == '$myName (Host)') {
+        return '$myName (Host, You)';
+      }
+      // Check if this entry is us as client
+      if (name == myName) {
+        return '$myName (You)';
       }
       return name;
     }).toList();
@@ -171,14 +184,12 @@ class AppState extends ChangeNotifier {
     notifyListeners();
 
     if (!kIsWeb) {
-      try {
-        await _discoveryService.stopHost();
-        await _discoveryService.stopDiscovery();
-        await _hostService.stopServer();
-        _fileTransferService.clearHostedFiles();
-      } catch (e) {
-        print('Error stopping server: $e');
-      }
+      // Each step is wrapped individually so one failure doesn't skip the rest.
+      try { await _discoveryService.stopHost(); } catch (_) {}
+      try { await _discoveryService.stopDiscovery(); } catch (_) {}
+      try { _discoveryService.clearResults(); } catch (_) {}
+      try { await _hostService.stopServer(); } catch (_) {}
+      try { _fileTransferService.clearHostedFiles(); } catch (_) {}
     }
 
     discoveredHosts.clear();
@@ -214,13 +225,22 @@ class AppState extends ChangeNotifier {
     isBusy = true;
     _setStatus('Connecting to $ip:$port...', persistent: true);
 
-    final success = await _clientService.connect(ip, port);
-    isConnectedToHost = success;
-    if (success) {
-      _clientService.sendHandshake(deviceName);
-      _setStatus('Connected to $ip:$port', persistent: true);
-    } else {
-      _setStatus('Failed to connect to $ip:$port');
+    try {
+      final success = await _clientService.connect(ip, port);
+      isConnectedToHost = success;
+      if (success) {
+        _clientService.sendHandshake(deviceName);
+        _setStatus('Connected to $ip:$port', persistent: true);
+      } else {
+        _setStatus('The host at $ip:$port is not available. It may have been stopped or is unreachable.');
+        // Remove the stale entry from discovered list
+        discoveredHosts.removeWhere((d) => d.ip == ip && d.port == port);
+      }
+    } on io.SocketException catch (_) {
+      _setStatus('The host at $ip:$port is not available. It may have been stopped or is unreachable.');
+      discoveredHosts.removeWhere((d) => d.ip == ip && d.port == port);
+    } catch (_) {
+      _setStatus('Could not connect. Please check the address and try again.');
     }
 
     isBusy = false;
