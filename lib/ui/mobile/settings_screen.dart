@@ -89,7 +89,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ],
             _buildSegmentedControl(),
             const SizedBox(height: 24),
-            // Device name field (common)
             _buildDeviceNameField(appState),
             const SizedBox(height: 24),
             _tabIndex == 0 ? _buildHostTab(appState) : _buildJoinTab(appState),
@@ -169,11 +168,66 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  // ---- Available Networks (only when idle) ----
+  Widget _buildAvailableNetworks(AppState appState) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text('AVAILABLE NETWORKS',
+                style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: AppTheme.textMuted,
+                    letterSpacing: 1)),
+            appState.isScanning
+                ? const SizedBox(
+                    width: 20, height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.textMuted),
+                  )
+                : IconButton(
+                    icon: const Icon(Icons.refresh_rounded, size: 20, color: AppTheme.textMuted),
+                    onPressed: () => appState.refreshDiscovery(),
+                  ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        if (appState.discoveredHosts.isEmpty)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 12),
+            child: Text('No hosts found. Tap refresh to scan.',
+                style: TextStyle(fontSize: 13, color: AppTheme.textMuted)),
+          )
+        else
+          ...appState.discoveredHosts.map(
+            (d) => Card(
+              margin: const EdgeInsets.only(bottom: 8),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              child: ListTile(
+                title: Text(d.name, style: const TextStyle(fontWeight: FontWeight.w500)),
+                subtitle: Text('${d.ip}:${d.port}', style: const TextStyle(fontSize: 12)),
+                trailing: const Icon(Icons.wifi_tethering, size: 20),
+                onTap: () {
+                  setState(() {
+                    _tabIndex = 1;
+                    _ipController.text = '${d.ip}:${d.port}';
+                  });
+                },
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  // ---- Host Tab ----
   Widget _buildHostTab(AppState appState) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Port input
+        // Port input row
         Row(
           children: [
             Expanded(
@@ -184,13 +238,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   labelText: 'Host Port',
                   hintText: '9876',
                   border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))),
-                  contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                 ),
                 onChanged: (val) {
                   final port = int.tryParse(val);
-                  if (port != null) {
-                    appState.setHostPort = port;
-                  }
+                  if (port != null) appState.setHostPort = port;
                 },
               ),
             ),
@@ -199,43 +251,32 @@ class _SettingsScreenState extends State<SettingsScreen> {
               style: ElevatedButton.styleFrom(
                 backgroundColor: appState.isHosting ? Colors.red : AppTheme.accentColor,
                 foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 elevation: 0,
-                minimumSize: const Size(120, 48),
+                minimumSize: const Size(120, 52),
               ),
               onPressed: appState.isBusy
                   ? null
                   : () => appState.toggleHosting(!appState.isHosting),
               child: appState.isBusy && !appState.isHosting
-                  ? const SizedBox(
-                      width: 16, height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                    )
+                  ? const SizedBox(width: 16, height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
                   : Text(appState.isHosting ? 'Stop' : 'Start'),
             ),
           ],
         ),
         const SizedBox(height: 24),
+        // When hosting: show hosting address and participants
         if (appState.isHosting) ...[
-          const Text(
-            'HOSTING ADDRESS',
-            style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                color: AppTheme.textMuted,
-                letterSpacing: 1),
-          ),
+          const Text('HOSTING ADDRESS',
+              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600,
+                  color: AppTheme.textMuted, letterSpacing: 1)),
           const SizedBox(height: 12),
           GestureDetector(
             onTap: () {
-              Clipboard.setData(
-                ClipboardData(text: '${appState.localIp}:${appState.hostPort}'),
-              );
+              Clipboard.setData(ClipboardData(text: '${appState.localIp}:${appState.hostPort}'));
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Address copied to clipboard'),
-                  duration: Duration(seconds: 1),
-                ),
+                const SnackBar(content: Text('Address copied to clipboard'), duration: Duration(seconds: 1)),
               );
             },
             child: Container(
@@ -251,13 +292,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        '${appState.localIp}:${appState.hostPort}',
-                        style: const TextStyle(
-                            fontSize: 18,
-                            letterSpacing: -0.5,
-                            fontWeight: FontWeight.w600),
-                      ),
+                      Text('${appState.localIp}:${appState.hostPort}',
+                          style: const TextStyle(fontSize: 18, letterSpacing: -0.5,
+                              fontWeight: FontWeight.w600)),
                       const SizedBox(height: 4),
                       const Text('Ready for connections',
                           style: TextStyle(fontSize: 12, color: AppTheme.textMuted)),
@@ -269,24 +306,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
           ),
           const SizedBox(height: 32),
-          // Note: future – show connected WebSocket clients here.
-          // For now, we just indicate that the server is running.
-          const Text(
-            'CONNECTED DEVICES',
-            style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                color: AppTheme.textMuted,
-                letterSpacing: 1),
-          ),
+          const Text('PARTICIPANTS',
+              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600,
+                  color: AppTheme.textMuted, letterSpacing: 1)),
           const SizedBox(height: 16),
-          if (appState.connectedClientNames.isEmpty)
+          if (appState.participants.isEmpty)
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 16),
-              child: Text('No clients connected yet',
+              child: Text('No one connected yet',
                   style: TextStyle(color: AppTheme.textMuted, fontSize: 13)),
             ),
-          ...appState.connectedClientNames.map((name) => Padding(
+          ...appState.participants.map((name) => Padding(
                 padding: const EdgeInsets.only(bottom: 12),
                 child: Container(
                   padding: const EdgeInsets.all(12),
@@ -296,40 +326,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                   child: Row(
                     children: [
-                      Container(
-                        width: 8,
-                        height: 8,
-                        decoration: const BoxDecoration(
-                            color: Colors.green, shape: BoxShape.circle),
-                      ),
+                      Container(width: 8, height: 8,
+                          decoration: const BoxDecoration(color: Colors.green, shape: BoxShape.circle)),
                       const SizedBox(width: 12),
-                      Expanded(
-                          child: Text(name,
-                              style: const TextStyle(
-                                  fontWeight: FontWeight.w500, fontSize: 14))),
-                      const Icon(Icons.devices, size: 16, color: AppTheme.textMuted),
+                      Expanded(child: Text(name,
+                          style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 14))),
+                      const Icon(Icons.person, size: 16, color: AppTheme.textMuted),
                     ],
                   ),
                 ),
               )),
+        ] else ...[
+          const SizedBox(height: 24),
+          _buildAvailableNetworks(appState),
         ],
       ],
     );
   }
 
+  // ---- Join Tab ----
   Widget _buildJoinTab(AppState appState) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          'JOIN NEARBY HOST',
-          style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              color: AppTheme.textMuted,
-              letterSpacing: 1),
-        ),
-        const SizedBox(height: 12),
         Row(
           children: [
             Expanded(
@@ -337,27 +356,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 controller: _ipController,
                 enabled: !appState.isBusy,
                 style: const TextStyle(fontSize: 14),
-                decoration: InputDecoration(
-                  hintText: 'IP:Port (e.g. 192.168.1.42:9876)',
-                  border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(color: AppTheme.borderColor)),
-                  enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(color: AppTheme.borderColor)),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                  fillColor: AppTheme.surfaceHover,
-                  filled: true,
+                decoration: const InputDecoration(
+                  labelText: 'Host Address',
+                  hintText: '192.168.1.42:9876',
+                  border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))),
+                  contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                 ),
               ),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: 16),
             ElevatedButton(
               style: ElevatedButton.styleFrom(
-                backgroundColor:
-                    appState.isConnectedToHost ? Colors.red : AppTheme.accentColor,
+                backgroundColor: appState.isConnectedToHost ? Colors.red : AppTheme.accentColor,
                 foregroundColor: Colors.white,
-                minimumSize: const Size(100, 48),
+                minimumSize: const Size(120, 52),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 elevation: 0,
               ),
@@ -379,62 +391,48 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           appState.connectTo(ip, port);
                         }),
               child: appState.isBusy && !appState.isConnectedToHost
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                    )
+                  ? const SizedBox(width: 16, height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
                   : Text(appState.isConnectedToHost ? 'Disconnect' : 'Connect'),
             ),
           ],
         ),
         const SizedBox(height: 32),
-        // Show mDNS discovered hosts
-        if (appState.connectedDevices.isNotEmpty)
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('DETECTED HOSTS (mDNS)',
-                  style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: AppTheme.textMuted,
-                      letterSpacing: 1)),
-              const SizedBox(height: 16),
-              ...appState.connectedDevices.map(
-                (d) => Card(
-                  margin: const EdgeInsets.only(bottom: 8),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  child: ListTile(
-                    title: Text(d.name, style: const TextStyle(fontWeight: FontWeight.w500)),
-                    subtitle: Text('${d.ip}:${d.port}', style: const TextStyle(fontSize: 12)),
-                    trailing: const Icon(Icons.wifi_tethering, size: 20),
-                    onTap: appState.isBusy
-                        ? null
-                        : () => appState.connectTo(d.ip, d.port),
+        // When connected: show participants
+        if (appState.isConnectedToHost) ...[
+          const Text('PARTICIPANTS',
+              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600,
+                  color: AppTheme.textMuted, letterSpacing: 1)),
+          const SizedBox(height: 16),
+          if (appState.participants.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 16),
+              child: Text('No participants',
+                  style: TextStyle(color: AppTheme.textMuted, fontSize: 13)),
+            ),
+          ...appState.participants.map((name) => Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppTheme.surfaceHover.withOpacity(0.5),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(width: 8, height: 8,
+                          decoration: const BoxDecoration(color: Colors.green, shape: BoxShape.circle)),
+                      const SizedBox(width: 12),
+                      Expanded(child: Text(name,
+                          style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 14))),
+                      const Icon(Icons.person, size: 16, color: AppTheme.textMuted),
+                    ],
                   ),
                 ),
-              ),
-            ],
-          )
-        else ...[
-          const SizedBox(height: 48),
-          Center(
-            child: Column(
-              children: const [
-                Icon(Icons.radar, size: 48, color: AppTheme.textMuted),
-                SizedBox(height: 16),
-                Text('Scanning local network...',
-                    style: TextStyle(
-                        fontSize: 14,
-                        color: AppTheme.textMuted,
-                        fontWeight: FontWeight.w500)),
-                SizedBox(height: 4),
-                Text('Ensure both devices are on the same WiFi',
-                    style: TextStyle(fontSize: 12, color: AppTheme.textMuted)),
-              ],
-            ),
-          ),
+              )),
+        ] else ...[
+          const SizedBox(height: 24),
+          _buildAvailableNetworks(appState),
         ],
       ],
     );
