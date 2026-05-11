@@ -36,6 +36,7 @@ class AppState extends ChangeNotifier {
 
   String localIp = '127.0.0.1';
   String connectionStatus = '';
+  Timer? _statusTimer;
   List<DiscoveredDevice> discoveredHosts = [];
   List<SharePayload> history = [];
   Map<String, double> downloadsProgress = {};
@@ -62,24 +63,40 @@ class AppState extends ChangeNotifier {
     // Hosting Streams
     _hostService.payloadStream.listen(_handleIncomingPayload);
     _hostService.clientListStream.listen(_handleClientListUpdate);
-    _hostService.statusStream.listen((status) {
-      connectionStatus = status;
-      notifyListeners();
-    });
+    _hostService.statusStream.listen((status) => _setStatus(status));
 
     // Client Streams
     _clientService.payloadStream.listen(_handleIncomingPayload);
     _clientService.clientListStream.listen(_handleClientListUpdate);
-    _clientService.statusStream.listen((status) {
-      connectionStatus = status;
-      notifyListeners();
-    });
+    _clientService.statusStream.listen((status) => _setStatus(status));
 
     // Progress
     _fileTransferService.progressStream.listen((progressMap) {
       downloadsProgress.addAll(progressMap);
       notifyListeners();
     });
+  }
+
+  /// Sets a status message. Transient messages auto-clear after 3 seconds.
+  /// Persistent statuses (server running, connected) stay until manually cleared.
+  void _setStatus(String status, {bool persistent = false}) {
+    _statusTimer?.cancel();
+    connectionStatus = status;
+    notifyListeners();
+
+    if (!persistent && status.isNotEmpty) {
+      _statusTimer = Timer(const Duration(seconds: 3), () {
+        connectionStatus = '';
+        notifyListeners();
+      });
+    }
+  }
+
+  /// Called by the UI close button to dismiss the status banner.
+  void clearStatus() {
+    _statusTimer?.cancel();
+    connectionStatus = '';
+    notifyListeners();
   }
 
   void _handleIncomingPayload(SharePayload payload) {
@@ -112,15 +129,13 @@ class AppState extends ChangeNotifier {
     notifyListeners();
 
     if (kIsWeb) {
-      connectionStatus = 'Hosting not supported on Web.';
+      _setStatus('Hosting not supported on Web.');
       isBusy = false;
-      notifyListeners();
       return;
     }
 
     try {
-      connectionStatus = 'Starting server on port $hostPort...';
-      notifyListeners();
+      _setStatus('Starting server on port $hostPort...', persistent: true);
 
       final router = Router();
       _fileTransferService.setupRoutes(router);
@@ -133,9 +148,16 @@ class AppState extends ChangeNotifier {
       }
 
       isHosting = true;
-      connectionStatus = 'Server running on $localIp:$hostPort';
+      _setStatus('Server running on $localIp:$hostPort', persistent: true);
+    } on io.SocketException catch (e) {
+      if (e.osError?.errorCode == 98 || e.message.contains('Address already in use')) {
+        _setStatus('Port $hostPort is already in use. Please choose a different port.');
+      } else {
+        _setStatus('Could not start server: ${e.message}');
+      }
+      isHosting = false;
     } catch (e) {
-      connectionStatus = 'Failed to start server: $e';
+      _setStatus('Could not start server: $e');
       isHosting = false;
     }
 
@@ -190,16 +212,15 @@ class AppState extends ChangeNotifier {
   Future<void> connectTo(String ip, int port) async {
     if (isBusy) return;
     isBusy = true;
-    connectionStatus = 'Connecting to $ip:$port...';
-    notifyListeners();
+    _setStatus('Connecting to $ip:$port...', persistent: true);
 
     final success = await _clientService.connect(ip, port);
     isConnectedToHost = success;
     if (success) {
       _clientService.sendHandshake(deviceName);
-      connectionStatus = 'Connected to $ip:$port';
+      _setStatus('Connected to $ip:$port', persistent: true);
     } else {
-      connectionStatus = 'Failed to connect to $ip:$port';
+      _setStatus('Failed to connect to $ip:$port');
     }
 
     isBusy = false;
@@ -239,8 +260,7 @@ class AppState extends ChangeNotifier {
 
   Future<void> shareFile(io.File file) async {
     if (kIsWeb) {
-      connectionStatus = 'File sharing not supported on Web Client';
-      notifyListeners();
+      _setStatus('File sharing not supported on Web Client');
       return;
     }
 
@@ -268,8 +288,7 @@ class AppState extends ChangeNotifier {
   Future<void> downloadLargeFile(
       String ip, int port, String id, String fileName) async {
     if (kIsWeb) {
-      connectionStatus = 'File download not supported on Web Client';
-      notifyListeners();
+      _setStatus('File download not supported on Web Client');
       return;
     }
 
@@ -283,13 +302,13 @@ class AppState extends ChangeNotifier {
     );
     
     if (downloadedFile != null) {
-      connectionStatus = 'File downloaded: ${downloadedFile.path}';
-      notifyListeners();
+      _setStatus('File downloaded: ${downloadedFile.path}');
     }
   }
 
   @override
   void dispose() {
+    _statusTimer?.cancel();
     _discoveryService.dispose();
     _hostService.dispose();
     _clientService.dispose();

@@ -53,38 +53,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           children: [
             // Status banner
             if (appState.connectionStatus.isNotEmpty) ...[
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                decoration: BoxDecoration(
-                  color: appState.connectionStatus.contains('Failed') ||
-                          appState.connectionStatus.contains('error')
-                      ? Colors.red.shade50
-                      : Colors.green.shade50,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Row(
-                  children: [
-                    Icon(
-                      appState.connectionStatus.contains('Failed') ||
-                              appState.connectionStatus.contains('error')
-                          ? Icons.error_outline
-                          : Icons.check_circle_outline,
-                      size: 18,
-                      color: appState.connectionStatus.contains('Failed') ||
-                              appState.connectionStatus.contains('error')
-                          ? Colors.red
-                          : Colors.green,
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        appState.connectionStatus,
-                        style: TextStyle(fontSize: 13, color: Colors.grey.shade800),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+              _buildStatusBanner(appState),
               const SizedBox(height: 16),
             ],
             _buildSegmentedControl(),
@@ -94,6 +63,41 @@ class _SettingsScreenState extends State<SettingsScreen> {
             _tabIndex == 0 ? _buildHostTab(appState) : _buildJoinTab(appState),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildStatusBanner(AppState appState) {
+    final isError = appState.connectionStatus.contains('Failed') ||
+        appState.connectionStatus.contains('error') ||
+        appState.connectionStatus.contains('already in use') ||
+        appState.connectionStatus.contains('Could not');
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: isError ? Colors.red.shade50 : Colors.green.shade50,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            isError ? Icons.error_outline : Icons.check_circle_outline,
+            size: 18,
+            color: isError ? Colors.red : Colors.green,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              appState.connectionStatus,
+              style: TextStyle(fontSize: 13, color: Colors.grey.shade800),
+            ),
+          ),
+          GestureDetector(
+            onTap: () => appState.clearStatus(),
+            child: Icon(Icons.close, size: 16, color: Colors.grey.shade600),
+          ),
+        ],
       ),
     );
   }
