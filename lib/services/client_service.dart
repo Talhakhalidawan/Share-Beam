@@ -15,6 +15,10 @@ class ClientService {
   final _statusController = StreamController<String>.broadcast();
   Stream<String> get statusStream => _statusController.stream;
 
+  /// Emits when the host drops the connection unexpectedly.
+  final _disconnectedController = StreamController<void>.broadcast();
+  Stream<void> get disconnectedStream => _disconnectedController.stream;
+
   /// Connects to a host at the given IP and port.
   Future<bool> connect(String ip, int port) async {
     disconnect();
@@ -37,7 +41,7 @@ class ClientService {
       return true;
     } catch (e) {
       print('[ClientService] Connection failed: $e');
-      _statusController.add('Failed to connect: $e');
+      // Don't emit raw error to status — AppState handles friendly messages.
       return false;
     }
   }
@@ -83,6 +87,7 @@ class ClientService {
     _channel = null;
     _statusController.add('Disconnected from host');
     _clientListController.add([]);
+    _disconnectedController.add(null);
   }
 
   void disconnect() {
@@ -95,5 +100,6 @@ class ClientService {
     _payloadController.close();
     _clientListController.close();
     _statusController.close();
+    _disconnectedController.close();
   }
 }

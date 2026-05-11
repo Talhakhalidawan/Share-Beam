@@ -214,10 +214,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 subtitle: Text('${d.ip}:${d.port}', style: const TextStyle(fontSize: 12)),
                 trailing: const Icon(Icons.wifi_tethering, size: 20),
                 onTap: () {
-                  setState(() {
-                    _tabIndex = 1;
-                    _ipController.text = '${d.ip}:${d.port}';
-                  });
+                  setState(() => _tabIndex = 1);
+                  _ipController.text = '${d.ip}:${d.port}';
+                  appState.connectTo(d.ip, d.port);
                 },
               ),
             ),
