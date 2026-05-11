@@ -13,63 +13,55 @@ import '../core/models.dart';
 class TransferService {
   HttpServer? _server;
   final List<WebSocketChannel> _clients = [];
-  final Map<WebSocketChannel, String> _clientNames = {}; // channel -> device name
+  final Map<WebSocketChannel, String> _clientNames = {};
   final Map<String, File> _hostedFiles = {};
+
+  String? _hostName;
 
   final _payloadController = StreamController<SharePayload>.broadcast();
   Stream<SharePayload> get payloadStream => _payloadController.stream;
 
-  final _progressController =
-      StreamController<Map<String, double>>.broadcast();
-  Stream<Map<String, double>> get progressStream =>
-      _progressController.stream;
+  final _progressController = StreamController<Map<String, double>>.broadcast();
+  Stream<Map<String, double>> get progressStream => _progressController.stream;
 
   final _connectionStatusController = StreamController<String>.broadcast();
-  Stream<String> get connectionStatusStream =>
-      _connectionStatusController.stream;
+  Stream<String> get connectionStatusStream => _connectionStatusController.stream;
 
-  // Stream of current connected client names (for the host)
-  final _connectedClientsController =
-      StreamController<List<String>>.broadcast();
-  Stream<List<String>> get connectedClientsStream =>
-      _connectedClientsController.stream;
+  final _clientListController = StreamController<List<String>>.broadcast();
+  Stream<List<String>> get clientListStream => _clientListController.stream;
 
   WebSocketChannel? _activeClientChannel;
 
-  Future<void> startServer(int port) async {
+  Future<void> startServer(int port, {String hostName = 'Host'}) async {
     await stopServer();
+    _hostName = hostName;
 
     final router = Router();
 
     router.get('/ws', webSocketHandler((WebSocketChannel channel, String? protocol) {
       _clients.add(channel);
-      _connectionStatusController
-          .add('Client connected. Total: ${_clients.length}');
+      _connectionStatusController.add('Client connected. Total: ${_clients.length}');
 
       channel.stream.listen(
         (message) {
           if (message is String) {
             try {
-              final data = jsonDecode(message);
-              if (data is! Map<String, dynamic>) return;   // ignore non-map messages
-
-              // Check for handshake
+              final data = jsonDecode(message) as Map<String, dynamic>;
+              // Handshake
               if (data['type'] == 'handshake') {
                 final name = data['senderName'] ?? 'Unknown';
                 _clientNames[channel] = name;
                 _emitConnectedClients();
+                _sendClientListTo(channel);
                 return;
               }
-
-              // Try to parse as SharePayload
+              // Normal payload – relay to all except sender
               final payload = SharePayload.fromJson(data);
               _payloadController.add(payload);
-
-              final encoded = message;
               for (final client in _clients) {
                 if (client != channel) {
                   try {
-                    client.sink.add(encoded);
+                    client.sink.add(message);
                   } catch (_) {
                     _clients.remove(client);
                     _clientNames.remove(client);
@@ -78,7 +70,6 @@ class TransferService {
                 }
               }
             } catch (e) {
-              // Ignore malformed messages
               print('[TransferService] Ignoring malformed message: $e');
             }
           }
@@ -87,8 +78,7 @@ class TransferService {
           _clients.remove(channel);
           _clientNames.remove(channel);
           _emitConnectedClients();
-          _connectionStatusController
-              .add('Client disconnected. Total: ${_clients.length}');
+          _connectionStatusController.add('Client disconnected. Total: ${_clients.length}');
         },
         onError: (e) {
           print('[TransferService] WebSocket error: $e');
@@ -99,7 +89,6 @@ class TransferService {
       );
     }));
 
-    // file download endpoint (stub)
     router.get('/download/<id>', (Request request, String id) async {
       final file = _hostedFiles[id];
       if (file == null || !await file.exists()) {
@@ -112,8 +101,7 @@ class TransferService {
         headers: {
           'Content-Length': stat.size.toString(),
           'Content-Type': 'application/octet-stream',
-          'Content-Disposition':
-              'attachment; filename="${file.uri.pathSegments.last}"',
+          'Content-Disposition': 'attachment; filename="${file.uri.pathSegments.last}"',
         },
       );
     });
@@ -125,24 +113,49 @@ class TransferService {
 
   void _emitConnectedClients() {
     final names = _clientNames.values.toList();
-    _connectedClientsController.add(names);
+    final fullList = ['$_hostName (Host)', ...names];
+    _clientListController.add(fullList);
+    _broadcastClientList(fullList);
+  }
+
+  void _broadcastClientList(List<String> list) {
+    final message = jsonEncode({'type': 'client_list', 'clients': list});
+    for (final client in _clients) {
+      try {
+        client.sink.add(message);
+      } catch (_) {
+        _clients.remove(client);
+        _clientNames.remove(client);
+      }
+    }
+  }
+
+  void _sendClientListTo(WebSocketChannel channel) {
+    final names = _clientNames.values.toList();
+    final fullList = ['$_hostName (Host)', ...names];
+    final message = jsonEncode({'type': 'client_list', 'clients': fullList});
+    try {
+      channel.sink.add(message);
+    } catch (e) {
+      print('[TransferService] Failed to send client list: $e');
+    }
   }
 
   Future<void> stopServer() async {
-    for (final client in _clients) {
+    for (final client in List<WebSocketChannel>.from(_clients)) {
       try {
         await client.sink.close();
       } catch (_) {}
     }
     _clients.clear();
     _clientNames.clear();
-    _emitConnectedClients();
-
+    _clientListController.add([]);
     if (_server != null) {
       await _server!.close(force: true);
       _server = null;
     }
     _hostedFiles.clear();
+    _hostName = null;
   }
 
   Future<bool> connectToHost(String ip, int port) async {
@@ -151,13 +164,6 @@ class TransferService {
       final uri = Uri.parse('ws://$ip:$port/ws');
       _activeClientChannel = WebSocketChannel.connect(uri);
       await _activeClientChannel!.ready;
-
-      // Send handshake with our device name (AppState will provide it)
-      // We'll need a reference to the device name; we'll do that via sendHandshake.
-      // For now, we'll leave a placeholder; the AppState will call sendHandshake after connecting.
-      // We'll adjust connectToHost to accept a deviceName.
-      // Instead, let's add a method sendHandshake that AppState calls after connect.
-      
       _connectionStatusController.add('Connected to $ip:$port');
 
       _activeClientChannel!.stream.listen(
@@ -165,6 +171,12 @@ class TransferService {
           if (message is String) {
             try {
               final data = jsonDecode(message);
+              if (data is! Map<String, dynamic>) return;
+              if (data['type'] == 'client_list') {
+                final List<dynamic> list = data['clients'] ?? [];
+                _clientListController.add(list.cast<String>());
+                return;
+              }
               final payload = SharePayload.fromJson(data);
               _payloadController.add(payload);
             } catch (e) {
@@ -191,7 +203,6 @@ class TransferService {
     }
   }
 
-  /// Send a handshake message (must be called right after connectToHost succeeds).
   void sendHandshake(String deviceName) {
     if (_activeClientChannel == null) return;
     final handshake = jsonEncode({
@@ -215,10 +226,7 @@ class TransferService {
     if (fileToHost != null) {
       _hostedFiles[payload.id] = fileToHost;
     }
-
     final messageJson = jsonEncode(payload.toJson());
-
-    // If hosting, send to all clients
     for (final client in List<WebSocketChannel>.from(_clients)) {
       try {
         client.sink.add(messageJson);
@@ -228,8 +236,6 @@ class TransferService {
         _emitConnectedClients();
       }
     }
-
-    // If client, send to host
     if (_activeClientChannel != null) {
       try {
         _activeClientChannel!.sink.add(messageJson);
@@ -241,8 +247,7 @@ class TransferService {
     }
   }
 
-  Future<File?> downloadFile(
-      String ip, int port, String id, String fileName, String saveDirectory) async {
+  Future<File?> downloadFile(String ip, int port, String id, String fileName, String saveDirectory) async {
     final url = Uri.parse('http://$ip:$port/download/$id');
     final httpClient = HttpClient();
     try {
@@ -279,6 +284,6 @@ class TransferService {
     _payloadController.close();
     _progressController.close();
     _connectionStatusController.close();
-    _connectedClientsController.close();
+    _clientListController.close();
   }
 }
