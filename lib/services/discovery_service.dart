@@ -4,189 +4,247 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import '../core/models.dart';
 
+/// Push-based LAN discovery.
+///
+/// HOST side:
+///   • Broadcasts a JSON announce packet to the multicast group every [_announcePeriod].
+///   • Sends a goodbye packet (3×) on stop so clients remove it immediately.
+///
+/// CLIENT side:
+///   • Keeps ONE persistent UDP socket bound to [discoveryPort] that has
+///     joined the multicast group — it therefore receives every announce/goodbye
+///     the host emits, regardless of when the client opened the app.
+///   • A TTL timer removes devices that haven't been heard from in [_deviceTtl],
+///     which handles hard crashes / network drops gracefully.
 class DiscoveryService {
+  // ── Constants ──────────────────────────────────────────────────────────────
   static const int discoveryPort = 9877;
   static const String multicastAddress = '224.0.0.123';
-  static const String magicQuery = 'SHAREBEAM_DISCOVER';
-  static const String magicGoodbye = 'SHAREBEAM_GOODBYE';
 
-  RawDatagramSocket? _hostSocket;     // for responding as host
-  RawDatagramSocket? _scanSocket;     // for scanning as client
-  StreamSubscription? _hostSubscription;
-  StreamSubscription? _scanSubscription;
-  Timer? _scanTimer;
-  Timer? _queryTimer;
+  static const String _typeAnnounce = 'SB_ANNOUNCE';
+  static const String _typeGoodbye  = 'SB_GOODBYE';
 
+  static const Duration _announcePeriod = Duration(seconds: 2);
+  static const Duration _deviceTtl      = Duration(seconds: 7); // ≥ 3 missed announces
+
+  // ── Host-side state ────────────────────────────────────────────────────────
+  RawDatagramSocket? _hostSocket;
+  Timer?             _announceTimer;
+  bool               _isHosting = false;
+  String             _hostName  = '';
+  int                _hostPort  = 9876;
+
+  // ── Listener-side state ────────────────────────────────────────────────────
+  RawDatagramSocket?  _listenerSocket;
+  StreamSubscription? _listenerSub;
+  bool                _isListening = false;
+  Timer?              _ttlTimer;
+
+  // "ip:port" → time of last announce
+  final Map<String, DateTime> _lastSeen = {};
+
+  // ── Public stream ──────────────────────────────────────────────────────────
   final _devicesController =
       StreamController<List<DiscoveredDevice>>.broadcast();
-  Stream<List<DiscoveredDevice>> get devicesStream =>
-      _devicesController.stream;
+  Stream<List<DiscoveredDevice>> get devicesStream => _devicesController.stream;
 
-  final List<DiscoveredDevice> _discoveredDevices = [];
+  final List<DiscoveredDevice> _devices = [];
 
-  bool _isHosting = false;
-  String _hostName = '';
-  int _hostServerPort = 9876;
+  // ────────────────────────────────────────────────────────────────────────────
+  // HOST API
+  // ────────────────────────────────────────────────────────────────────────────
 
-  /// Start hosting – open a UDP socket, join multicast group, and listen for queries.
+  /// Opens a send-only UDP socket and begins broadcasting presence.
   Future<void> startHost(String deviceName, int serverPort) async {
     if (_isHosting) return;
     _hostName = deviceName;
-    _hostServerPort = serverPort;
+    _hostPort = serverPort;
 
     try {
-      _hostSocket = await RawDatagramSocket.bind(
-        InternetAddress.anyIPv4,
-        discoveryPort,
-      );
-      _hostSocket!.joinMulticast(InternetAddress(multicastAddress));
-      _hostSubscription = _hostSocket!.listen((event) {
-        if (event == RawSocketEvent.read) {
-          final datagram = _hostSocket!.receive();
-          if (datagram == null) return;
-          final message = String.fromCharCodes(datagram.data).trim();
-          if (message == magicQuery) {
-            final reply = jsonEncode({
-              'name': _hostName,
-              'port': _hostServerPort,
-            });
-            _hostSocket!.send(
-              reply.codeUnits,
-              datagram.address,
-              datagram.port,
-            );
-          }
-        }
-      });
+      // Ephemeral port — we only send, never receive on this socket.
+      _hostSocket = await RawDatagramSocket.bind(InternetAddress.anyIPv4, 0);
+
+      void announce() {
+        if (_hostSocket == null) return;
+        final bytes = utf8.encode(jsonEncode({
+          'type': _typeAnnounce,
+          'name': _hostName,
+          'port': _hostPort,
+        }));
+        try {
+          _hostSocket!.send(bytes, InternetAddress(multicastAddress), discoveryPort);
+        } catch (_) {}
+      }
+
+      announce(); // immediate
+      _announceTimer = Timer.periodic(_announcePeriod, (_) => announce());
       _isHosting = true;
+      print('[Discovery] Host broadcasting as "$_hostName" on port $_hostPort');
     } catch (e) {
-      print('[DiscoveryService] Failed to start host UDP: $e');
+      print('[Discovery] startHost failed: $e');
       await stopHost();
     }
   }
 
-  /// Stop hosting.
+  /// Sends goodbye 3× and tears down the broadcast socket.
   Future<void> stopHost() async {
-    if (!_isHosting) return;
+    _announceTimer?.cancel();
+    _announceTimer = null;
 
-    // Broadcast goodbye so clients can remove us instantly
     if (_hostSocket != null) {
-      try {
-        final goodbye = jsonEncode({
-          'type': magicGoodbye,
-          'ip': InternetAddress.anyIPv4.address, // Placeholder, client uses sender IP
-          'port': _hostServerPort,
-        });
-        _hostSocket!.send(
-          goodbye.codeUnits,
-          InternetAddress(multicastAddress),
-          discoveryPort,
-        );
-      } catch (_) {}
-    }
-
-    await _hostSubscription?.cancel();
-    _hostSubscription = null;
-    if (_hostSocket != null) {
-      try {
-        _hostSocket!.leaveMulticast(InternetAddress(multicastAddress));
-      } catch (_) {}
-      _hostSocket?.close();
+      final bytes = utf8.encode(jsonEncode({
+        'type': _typeGoodbye,
+        'port': _hostPort,
+      }));
+      // Send 3 times to improve reliability over lossy Wi-Fi.
+      for (int i = 0; i < 3; i++) {
+        try {
+          _hostSocket!.send(bytes, InternetAddress(multicastAddress), discoveryPort);
+        } catch (_) {}
+      }
+      _hostSocket!.close();
       _hostSocket = null;
     }
     _isHosting = false;
+    print('[Discovery] Host stopped broadcasting');
   }
 
-  /// Clears discovered devices list (e.g. when the user stops hosting).
-  void clearResults() {
-    _discoveredDevices.clear();
-    _devicesController.add([]);
-  }
+  // ────────────────────────────────────────────────────────────────────────────
+  // CLIENT / LISTENER API
+  // ────────────────────────────────────────────────────────────────────────────
 
-  /// Scan for hosts by sending a multicast query and listening for replies.
-  /// Sends queries every 2 seconds so hosts that start mid-scan are found.
+  /// Starts the persistent multicast listener (idempotent).
+  ///
+  /// [timeout] is accepted for API compatibility but ignored — the listener
+  /// stays open until [stopDiscovery] or [dispose] is called.
   Future<void> startDiscovery({Duration timeout = const Duration(seconds: 10)}) async {
-    await stopDiscovery();
-
-    if (kIsWeb) return;
-
-    // Clear previous results at the START of a new scan
-    _discoveredDevices.clear();
-    _devicesController.add([]);
+    if (kIsWeb || _isListening) return;
 
     try {
-      _scanSocket = await RawDatagramSocket.bind(
+      _listenerSocket = await RawDatagramSocket.bind(
         InternetAddress.anyIPv4,
-        0, // OS picks free port
+        discoveryPort,
+        reuseAddress: true,
+        reusePort: true, // needed on some platforms to share the port with the host socket
       );
-      _scanSocket!.broadcastEnabled = true;
+      _listenerSocket!.joinMulticast(InternetAddress(multicastAddress));
 
-      final completer = Completer<void>();
-      _scanTimer = Timer(timeout, () {
-        completer.complete();
-      });
-
-      _scanSubscription = _scanSocket!.listen((event) {
+      _listenerSub = _listenerSocket!.listen((event) {
         if (event == RawSocketEvent.read) {
-          final datagram = _scanSocket!.receive();
-          if (datagram == null) return;
-          try {
-            final data = jsonDecode(String.fromCharCodes(datagram.data));
-            final ip = datagram.address.address;
-
-            // Handle Goodbye
-            if (data is Map && data['type'] == magicGoodbye) {
-              final port = data['port'] as int? ?? 9876;
-              _discoveredDevices.removeWhere((d) => d.ip == ip && d.port == port);
-              _devicesController.add(List<DiscoveredDevice>.from(_discoveredDevices));
-              return;
-            }
-
-            // Handle Discovery Response
-            final name = data['name'] as String? ?? 'Unknown';
-            final port = data['port'] as int? ?? 9876;
-
-            _discoveredDevices.removeWhere(
-              (d) => d.ip == ip && d.port == port,
-            );
-            _discoveredDevices.add(DiscoveredDevice(name: name, ip: ip, port: port));
-            _devicesController.add(List<DiscoveredDevice>.from(_discoveredDevices));
-          } catch (_) {}
+          final dg = _listenerSocket!.receive();
+          if (dg != null) _handleDatagram(dg);
         }
       });
 
-      // Send query immediately, then repeat every 2 seconds
-      final queryBytes = utf8.encode(magicQuery);
-      void sendQuery() {
-        _scanSocket?.send(
-          queryBytes,
-          InternetAddress(multicastAddress),
-          discoveryPort,
-        );
-      }
+      // TTL cleanup: runs every 2 s, removes devices silent for >7 s.
+      _ttlTimer = Timer.periodic(const Duration(seconds: 2), (_) => _pruneExpired());
 
-      sendQuery();
-      _queryTimer = Timer.periodic(const Duration(seconds: 2), (_) => sendQuery());
-
-      await completer.future;
+      _isListening = true;
+      print('[Discovery] Listener active on port $discoveryPort (multicast $multicastAddress)');
     } catch (e) {
-      print('[DiscoveryService] Scan error: $e');
-    } finally {
-      await stopDiscovery();
+      print('[Discovery] startDiscovery failed: $e');
+      _isListening = false;
     }
   }
 
-  /// Stops the scan but keeps discovered results visible.
+  /// Stops the listener and TTL timer. Discovered results are kept.
   Future<void> stopDiscovery() async {
-    _scanTimer?.cancel();
-    _scanTimer = null;
-    _queryTimer?.cancel();
-    _queryTimer = null;
-    await _scanSubscription?.cancel();
-    _scanSubscription = null;
-    _scanSocket?.close();
-    _scanSocket = null;
-    // Results are intentionally kept — cleared at the start of the next scan.
+    _ttlTimer?.cancel();
+    _ttlTimer = null;
+
+    await _listenerSub?.cancel();
+    _listenerSub = null;
+
+    if (_listenerSocket != null) {
+      try { _listenerSocket!.leaveMulticast(InternetAddress(multicastAddress)); } catch (_) {}
+      _listenerSocket!.close();
+      _listenerSocket = null;
+    }
+    _isListening = false;
+  }
+
+  /// Clears the discovered-device list and stream.
+  void clearResults() {
+    _devices.clear();
+    _lastSeen.clear();
+    _devicesController.add([]);
+  }
+
+  // ────────────────────────────────────────────────────────────────────────────
+  // INTERNAL
+  // ────────────────────────────────────────────────────────────────────────────
+
+  void _handleDatagram(Datagram dg) {
+    try {
+      final raw  = utf8.decode(dg.data).trim();
+      final data = jsonDecode(raw);
+      if (data is! Map) return;
+
+      final type = data['type'] as String?;
+      final ip   = dg.address.address;
+
+      if (type == _typeGoodbye) {
+        final port = data['port'] as int? ?? 9876;
+        _remove(ip, port);
+        return;
+      }
+
+      if (type == _typeAnnounce) {
+        final name = (data['name'] as String?) ?? 'Unknown';
+        final port = (data['port'] as int?) ?? 9876;
+        _upsert(DiscoveredDevice(name: name, ip: ip, port: port));
+        return;
+      }
+    } catch (_) {}
+  }
+
+  void _upsert(DiscoveredDevice device) {
+    final key = '${device.ip}:${device.port}';
+    _lastSeen[key] = DateTime.now();
+
+    final idx = _devices.indexWhere((d) => d.ip == device.ip && d.port == device.port);
+    if (idx == -1) {
+      _devices.add(device);
+      _devicesController.add(List.from(_devices));
+    } else if (_devices[idx].name != device.name) {
+      // Name changed (e.g. device renamed)
+      _devices[idx] = device;
+      _devicesController.add(List.from(_devices));
+    }
+    // Seen same device again — no change needed, just updated _lastSeen.
+  }
+
+  void _remove(String ip, int port) {
+    final key = '$ip:$port';
+    _lastSeen.remove(key);
+    final before = _devices.length;
+    _devices.removeWhere((d) => d.ip == ip && d.port == port);
+    if (_devices.length != before) {
+      _devicesController.add(List.from(_devices));
+      print('[Discovery] Removed $ip:$port (goodbye)');
+    }
+  }
+
+  void _pruneExpired() {
+    final now     = DateTime.now();
+    final expired = _lastSeen.entries
+        .where((e) => now.difference(e.value) > _deviceTtl)
+        .map((e) => e.key)
+        .toList();
+
+    if (expired.isEmpty) return;
+
+    for (final key in expired) {
+      _lastSeen.remove(key);
+      final parts = key.split(':');
+      if (parts.length == 2) {
+        final ip   = parts[0];
+        final port = int.tryParse(parts[1]) ?? 9876;
+        _devices.removeWhere((d) => d.ip == ip && d.port == port);
+        print('[Discovery] Pruned $ip:$port (TTL expired)');
+      }
+    }
+    _devicesController.add(List.from(_devices));
   }
 
   void dispose() {
