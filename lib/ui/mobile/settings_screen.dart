@@ -437,6 +437,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     fontSize: 16, fontWeight: FontWeight.w500, color: _iosText,
                   ),
                 ),
+                const SizedBox(width: 24),
                 Expanded(
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.end,
