@@ -5,16 +5,14 @@ import 'package:shelf_router/shelf_router.dart';
 
 class FileTransferService {
   final Map<String, File> _hostedFiles = {};
-  
+
   final _progressController = StreamController<Map<String, double>>.broadcast();
   Stream<Map<String, double>> get progressStream => _progressController.stream;
 
-  /// Registers a file to be hosted by the local HTTP server.
   void hostFile(String id, File file) {
     _hostedFiles[id] = file;
   }
 
-  /// Returns a Shelf route for downloading hosted files.
   void setupRoutes(Router router) {
     router.get('/download/<id>', (Request request, String id) async {
       final file = _hostedFiles[id];
@@ -22,19 +20,23 @@ class FileTransferService {
         return Response.notFound('File not found');
       }
       final stat = await file.stat();
-      final fileStream = file.openRead();
       return Response.ok(
-        fileStream,
+        file.openRead(),
         headers: {
           'Content-Length': stat.size.toString(),
           'Content-Type': 'application/octet-stream',
-          'Content-Disposition': 'attachment; filename="${file.uri.pathSegments.last}"',
+          'Content-Disposition':
+              'attachment; filename="${file.uri.pathSegments.last}"',
         },
       );
     });
   }
 
-  /// Downloads a file from a remote host.
+  /// Downloads a file from the remote host.
+  ///
+  /// Bug #3 fix: writes to a `.tmp` file and renames on success. If the
+  /// download fails at any point (network drop, server error, mid-stream
+  /// exception) the partial temp file is deleted so no garbage accumulates.
   Future<File?> downloadFile({
     required String ip,
     required int port,
@@ -42,42 +44,59 @@ class FileTransferService {
     required String fileName,
     required String saveDirectory,
   }) async {
-    final url = Uri.parse('http://$ip:$port/download/$id');
-    final httpClient = HttpClient();
-    
+    final url      = Uri.parse('http://$ip:$port/download/$id');
+    final client   = HttpClient();
+    final tempPath = '$saveDirectory/$fileName.tmp';
+    final finalPath = '$saveDirectory/$fileName';
+    File? tempFile;
+
     try {
-      final request = await httpClient.getUrl(url);
+      final request  = await client.getUrl(url);
       final response = await request.close();
-      
-      if (response.statusCode == 200) {
-        final contentLength = response.contentLength;
-        final savePath = '$saveDirectory/$fileName';
-        final file = File(savePath);
-        final sink = file.openWrite();
-        
-        int receivedBytes = 0;
+
+      if (response.statusCode != 200) {
+        print('[FileTransferService] Server returned ${response.statusCode}');
+        return null;
+      }
+
+      final contentLength = response.contentLength;
+      tempFile = File(tempPath);
+      final sink = tempFile.openWrite();
+
+      try {
+        int received = 0;
         await for (final chunk in response) {
           sink.add(chunk);
-          receivedBytes += chunk.length;
+          received += chunk.length;
           if (contentLength > 0) {
-            _progressController.add({id: receivedBytes / contentLength});
+            _progressController.add({id: received / contentLength});
           }
         }
         await sink.close();
+
+        // Atomic-ish: rename temp → final path.
+        final saved = await tempFile.rename(finalPath);
         _progressController.add({id: 1.0});
-        return file;
+        return saved;
+      } catch (e) {
+        await sink.close();
+        // Clean up the partial file so the user doesn't see corrupt data.
+        if (await tempFile.exists()) await tempFile.delete();
+        print('[FileTransferService] Download interrupted: $e');
+        return null;
       }
     } catch (e) {
       print('[FileTransferService] Download error: $e');
+      if (tempFile != null && await tempFile.exists()) {
+        await tempFile.delete();
+      }
+      return null;
     } finally {
-      httpClient.close();
+      client.close();
     }
-    return null;
   }
 
-  void clearHostedFiles() {
-    _hostedFiles.clear();
-  }
+  void clearHostedFiles() => _hostedFiles.clear();
 
   void dispose() {
     _progressController.close();

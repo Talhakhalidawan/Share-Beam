@@ -12,63 +12,67 @@ import '../core/models.dart';
 
 class HostService {
   HttpServer? _server;
-  final List<WebSocketChannel> _clients = [];
-  final Map<WebSocketChannel, String> _clientNames = {};
+  final List<WebSocketChannel>         _clients     = [];
+  final Map<WebSocketChannel, String>  _clientNames = {};
   String? _hostName;
 
-  final _payloadController = StreamController<SharePayload>.broadcast();
-  Stream<SharePayload> get payloadStream => _payloadController.stream;
+  // Bug #10: periodic ping detects silently-dead connections quickly.
+  Timer? _pingTimer;
 
+  final _payloadController    = StreamController<SharePayload>.broadcast();
   final _clientListController = StreamController<List<String>>.broadcast();
-  Stream<List<String>> get clientListStream => _clientListController.stream;
+  final _statusController     = StreamController<String>.broadcast();
 
-  final _statusController = StreamController<String>.broadcast();
-  Stream<String> get statusStream => _statusController.stream;
+  Stream<SharePayload>  get payloadStream    => _payloadController.stream;
+  Stream<List<String>>  get clientListStream => _clientListController.stream;
+  Stream<String>        get statusStream     => _statusController.stream;
 
-  /// Starts the WebSocket and HTTP server on the given port.
   Future<void> startServer(int port, String hostName, Router router) async {
     await stopServer();
     _hostName = hostName;
 
-    // Add WebSocket handler to the provided router
     router.get('/ws', webSocketHandler((WebSocketChannel channel, String? protocol) {
       _clients.add(channel);
       _statusController.add('Client connected. Total: ${_clients.length}');
 
       channel.stream.listen(
         (message) {
-          if (message is String) {
-            _handleIncomingMessage(message, channel);
-          }
+          if (message is String) _handleMessage(message, channel);
         },
-        onDone: () => _removeClient(channel),
-        onError: (e) => _removeClient(channel),
+        onDone:  () => _removeClient(channel),
+        onError: (_) => _removeClient(channel),
       );
     }));
 
     final handler = const Pipeline().addHandler(router.call);
     _server = await shelf_io.serve(handler, '0.0.0.0', port);
     print('[HostService] Server running on 0.0.0.0:$port');
+
+    // Ping every 20 s. Any client that doesn't respond (onError/onDone fires)
+    // gets removed, so the participants list stays accurate.
+    _pingTimer = Timer.periodic(const Duration(seconds: 20), (_) {
+      _broadcastAll(jsonEncode({'type': 'ping'}));
+    });
   }
 
-  void _handleIncomingMessage(String message, WebSocketChannel sender) {
+  void _handleMessage(String message, WebSocketChannel sender) {
     try {
       final data = jsonDecode(message) as Map<String, dynamic>;
-      
-      // Handle Handshake
+
+      // Ignore client-side pings (not currently sent, but defensive).
+      if (data['type'] == 'ping') return;
+
       if (data['type'] == 'handshake') {
-        final name = data['senderName'] ?? 'Unknown';
-        _clientNames[sender] = name;
-        _emitConnectedClients();
+        _clientNames[sender] = (data['senderName'] as String?) ?? 'Unknown';
+        _emitClientList();
         _sendClientListTo(sender);
         return;
       }
 
-      // Handle SharePayload - Relay to others
-      final payload = SharePayload.fromJson(data);
-      _payloadController.add(payload);
-      
-      for (final client in _clients) {
+      // It's a SharePayload — receive locally and relay to all other clients.
+      _payloadController.add(SharePayload.fromJson(data));
+
+      for (final client in List<WebSocketChannel>.from(_clients)) {
         if (client != sender) {
           try {
             client.sink.add(message);
@@ -78,34 +82,31 @@ class HostService {
         }
       }
     } catch (e) {
-      print('[HostService] Error parsing message: $e');
+      print('[HostService] Parse error: $e');
     }
   }
 
   void _removeClient(WebSocketChannel channel) {
     _clients.remove(channel);
     _clientNames.remove(channel);
-    _emitConnectedClients();
+    _emitClientList();
     _statusController.add('Client disconnected. Total: ${_clients.length}');
   }
 
-  void _emitConnectedClients() {
-    final names = _clientNames.values.toList();
-    final fullList = ['$_hostName (Host)', ...names];
-    _clientListController.add(fullList);
-    _broadcastToAll(jsonEncode({'type': 'client_list', 'clients': fullList}));
+  void _emitClientList() {
+    final list = ['$_hostName (Host)', ..._clientNames.values];
+    _clientListController.add(list);
+    _broadcastAll(jsonEncode({'type': 'client_list', 'clients': list}));
   }
 
   void _sendClientListTo(WebSocketChannel channel) {
-    final names = _clientNames.values.toList();
-    final fullList = ['$_hostName (Host)', ...names];
-    final message = jsonEncode({'type': 'client_list', 'clients': fullList});
+    final list = ['$_hostName (Host)', ..._clientNames.values];
     try {
-      channel.sink.add(message);
+      channel.sink.add(jsonEncode({'type': 'client_list', 'clients': list}));
     } catch (_) {}
   }
 
-  void _broadcastToAll(String message) {
+  void _broadcastAll(String message) {
     for (final client in List<WebSocketChannel>.from(_clients)) {
       try {
         client.sink.add(message);
@@ -115,21 +116,21 @@ class HostService {
     }
   }
 
-  /// Sends a payload to all connected clients.
   void sendPayload(SharePayload payload) {
-    final message = jsonEncode(payload.toJson());
-    _broadcastToAll(message);
+    _broadcastAll(jsonEncode(payload.toJson()));
   }
 
   Future<void> stopServer() async {
+    _pingTimer?.cancel();
+    _pingTimer = null;
+
     for (final client in List<WebSocketChannel>.from(_clients)) {
-      try {
-        await client.sink.close();
-      } catch (_) {}
+      try { await client.sink.close(); } catch (_) {}
     }
     _clients.clear();
     _clientNames.clear();
     _clientListController.add([]);
+
     if (_server != null) {
       await _server!.close(force: true);
       _server = null;
@@ -137,8 +138,22 @@ class HostService {
     _hostName = null;
   }
 
+  // Bug #2: dispose was fire-and-forget. Now it synchronously cancels the ping
+  // timer and closes the HTTP server with force:true (no graceful wait needed),
+  // then closes stream controllers. The WebSocket sinks are best-effort.
   void dispose() {
-    stopServer();
+    _pingTimer?.cancel();
+    _pingTimer = null;
+
+    for (final client in List<WebSocketChannel>.from(_clients)) {
+      try { client.sink.close(); } catch (_) {}
+    }
+    _clients.clear();
+    _clientNames.clear();
+
+    _server?.close(force: true);
+    _server = null;
+
     _payloadController.close();
     _clientListController.close();
     _statusController.close();

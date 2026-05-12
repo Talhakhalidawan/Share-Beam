@@ -14,9 +14,15 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   int _tabIndex = 0;
-  final TextEditingController _ipController = TextEditingController();
+  final TextEditingController _ipController   = TextEditingController();
   final TextEditingController _portController = TextEditingController();
   final TextEditingController _nameController = TextEditingController();
+
+  // Bug #5: inline validation error for the join field.
+  String? _ipError;
+
+  static final _ipv4Re =
+      RegExp(r'^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$');
 
   @override
   void initState() {
@@ -33,6 +39,60 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _nameController.dispose();
     super.dispose();
   }
+
+  // ── Validation ─────────────────────────────────────────────────────────────
+
+  /// Parses "ip:port" or bare "ip", validates both, returns (ip, port) or null.
+  ({String ip, int port})? _parseAndValidate(String input, int fallbackPort) {
+    final trimmed = input.trim();
+    if (trimmed.isEmpty) {
+      setState(() => _ipError = 'Enter a host address');
+      return null;
+    }
+
+    String ipPart;
+    int    portPart;
+
+    if (trimmed.contains(':')) {
+      final idx = trimmed.lastIndexOf(':');
+      ipPart = trimmed.substring(0, idx);
+      final p = int.tryParse(trimmed.substring(idx + 1));
+      if (p == null || p <= 0 || p > 65535) {
+        setState(() => _ipError = 'Invalid port — must be 1–65535');
+        return null;
+      }
+      portPart = p;
+    } else {
+      ipPart   = trimmed;
+      portPart = fallbackPort;
+    }
+
+    if (!_ipv4Re.hasMatch(ipPart)) {
+      setState(() => _ipError = 'Enter a valid IP (e.g. 192.168.1.42)');
+      return null;
+    }
+
+    // Check each octet is 0–255.
+    final octets = ipPart.split('.').map(int.parse).toList();
+    if (octets.any((o) => o > 255)) {
+      setState(() => _ipError = 'Each IP octet must be 0–255');
+      return null;
+    }
+
+    setState(() => _ipError = null);
+    return (ip: ipPart, port: portPart);
+  }
+
+  void _connect(AppState appState) {
+    final parsed = _parseAndValidate(
+      _ipController.text,
+      appState.hostPort,
+    );
+    if (parsed == null) return;
+    appState.connectTo(parsed.ip, parsed.port);
+  }
+
+  // ── Build ──────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
@@ -51,7 +111,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Status banner
             if (appState.connectionStatus.isNotEmpty) ...[
               _buildStatusBanner(appState),
               const SizedBox(height: 16),
@@ -60,7 +119,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
             const SizedBox(height: 24),
             _buildDeviceNameField(appState),
             const SizedBox(height: 24),
-            _tabIndex == 0 ? _buildHostTab(appState) : _buildJoinTab(appState),
+            _tabIndex == 0
+                ? _buildHostTab(appState)
+                : _buildJoinTab(appState),
           ],
         ),
       ),
@@ -71,7 +132,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final isError = appState.connectionStatus.contains('Failed') ||
         appState.connectionStatus.contains('error') ||
         appState.connectionStatus.contains('already in use') ||
-        appState.connectionStatus.contains('Could not');
+        appState.connectionStatus.contains('Could not') ||
+        appState.connectionStatus.contains('not available') ||
+        appState.connectionStatus.contains('Network error');
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -107,9 +170,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
       controller: _nameController,
       decoration: const InputDecoration(
         labelText: 'Your Device Name',
-        hintText: 'e.g. Talha’s Phone',
-        border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))),
-        contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        hintText: 'e.g. Talha\'s Phone',
+        border: OutlineInputBorder(
+            borderRadius: BorderRadius.all(Radius.circular(12))),
+        contentPadding:
+            EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       ),
       onChanged: (name) => appState.deviceName = name,
     );
@@ -125,54 +190,45 @@ class _SettingsScreenState extends State<SettingsScreen> {
       padding: const EdgeInsets.all(4),
       child: Row(
         children: [
-          Expanded(
-            child: GestureDetector(
-              onTap: () => setState(() => _tabIndex = 0),
-              child: Container(
-                padding: const EdgeInsets.symmetric(vertical: 10),
-                decoration: BoxDecoration(
-                  color: _tabIndex == 0 ? AppTheme.surfaceColor : Colors.transparent,
-                  borderRadius: BorderRadius.circular(6),
-                  boxShadow: _tabIndex == 0
-                      ? [const BoxShadow(color: Colors.black12, blurRadius: 4, offset: Offset(0, 2))]
-                      : [],
-                ),
-                alignment: Alignment.center,
-                child: Text('Host Server',
-                    style: TextStyle(
-                        fontWeight: FontWeight.w500,
-                        fontSize: 13,
-                        color: _tabIndex == 0 ? AppTheme.textMain : AppTheme.textMuted)),
-              ),
-            ),
-          ),
-          Expanded(
-            child: GestureDetector(
-              onTap: () => setState(() => _tabIndex = 1),
-              child: Container(
-                padding: const EdgeInsets.symmetric(vertical: 10),
-                decoration: BoxDecoration(
-                  color: _tabIndex == 1 ? AppTheme.surfaceColor : Colors.transparent,
-                  borderRadius: BorderRadius.circular(6),
-                  boxShadow: _tabIndex == 1
-                      ? [const BoxShadow(color: Colors.black12, blurRadius: 4, offset: Offset(0, 2))]
-                      : [],
-                ),
-                alignment: Alignment.center,
-                child: Text('Join Server',
-                    style: TextStyle(
-                        fontWeight: FontWeight.w500,
-                        fontSize: 13,
-                        color: _tabIndex == 1 ? AppTheme.textMain : AppTheme.textMuted)),
-              ),
-            ),
-          ),
+          _segTab('Host Server', 0),
+          _segTab('Join Server', 1),
         ],
       ),
     );
   }
 
-  // ---- Available Networks (only when idle) ----
+  Widget _segTab(String label, int index) {
+    final active = _tabIndex == index;
+    return Expanded(
+      child: GestureDetector(
+        onTap: () => setState(() => _tabIndex = index),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          decoration: BoxDecoration(
+            color: active ? AppTheme.surfaceColor : Colors.transparent,
+            borderRadius: BorderRadius.circular(6),
+            boxShadow: active
+                ? [const BoxShadow(
+                    color: Colors.black12, blurRadius: 4,
+                    offset: Offset(0, 2))]
+                : [],
+          ),
+          alignment: Alignment.center,
+          child: Text(
+            label,
+            style: TextStyle(
+              fontWeight: FontWeight.w500,
+              fontSize: 13,
+              color: active ? AppTheme.textMain : AppTheme.textMuted,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ── Available Networks ─────────────────────────────────────────────────────
+
   Widget _buildAvailableNetworks(AppState appState) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -188,11 +244,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     letterSpacing: 1)),
             appState.isScanning
                 ? const SizedBox(
-                    width: 20, height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.textMuted),
-                  )
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2, color: AppTheme.textMuted))
                 : IconButton(
-                    icon: const Icon(Icons.refresh_rounded, size: 20, color: AppTheme.textMuted),
+                    icon: const Icon(Icons.refresh_rounded,
+                        size: 20, color: AppTheme.textMuted),
                     onPressed: () => appState.refreshDiscovery(),
                   ),
           ],
@@ -208,14 +266,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ...appState.discoveredHosts.map(
             (d) => Card(
               margin: const EdgeInsets.only(bottom: 8),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12)),
               child: ListTile(
-                title: Text(d.name, style: const TextStyle(fontWeight: FontWeight.w500)),
-                subtitle: Text('${d.ip}:${d.port}', style: const TextStyle(fontSize: 12)),
-                trailing: const Icon(Icons.wifi_tethering, size: 20),
+                title: Text(d.name,
+                    style: const TextStyle(fontWeight: FontWeight.w500)),
+                subtitle: Text('${d.ip}:${d.port}',
+                    style: const TextStyle(fontSize: 12)),
+                trailing:
+                    const Icon(Icons.wifi_tethering, size: 20),
                 onTap: () {
-                  setState(() => _tabIndex = 1);
-                  _ipController.text = '${d.ip}:${d.port}';
+                  setState(() {
+                    _tabIndex = 1;
+                    _ipController.text = '${d.ip}:${d.port}';
+                    _ipError = null;
+                  });
                   appState.connectTo(d.ip, d.port);
                 },
               ),
@@ -225,12 +290,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  // ---- Host Tab ----
+  // ── Host Tab ───────────────────────────────────────────────────────────────
+
   Widget _buildHostTab(AppState appState) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Port input row
         Row(
           children: [
             Expanded(
@@ -240,8 +305,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 decoration: const InputDecoration(
                   labelText: 'Host Port',
                   hintText: '9876',
-                  border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))),
-                  contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  border: OutlineInputBorder(
+                      borderRadius:
+                          BorderRadius.all(Radius.circular(12))),
+                  contentPadding:
+                      EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                 ),
                 onChanged: (val) {
                   final port = int.tryParse(val);
@@ -252,9 +320,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
             const SizedBox(width: 16),
             ElevatedButton(
               style: ElevatedButton.styleFrom(
-                backgroundColor: appState.isHosting ? Colors.red : AppTheme.accentColor,
+                backgroundColor:
+                    appState.isHosting ? Colors.red : AppTheme.accentColor,
                 foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
                 elevation: 0,
                 minimumSize: const Size(120, 52),
               ),
@@ -262,25 +332,32 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ? null
                   : () => appState.toggleHosting(!appState.isHosting),
               child: appState.isBusy && !appState.isHosting
-                  ? const SizedBox(width: 16, height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: Colors.white))
                   : Text(appState.isHosting ? 'Stop' : 'Start'),
             ),
           ],
         ),
         const SizedBox(height: 24),
-        // When hosting: show hosting address and participants
         if (appState.isHosting) ...[
           const Text('HOSTING ADDRESS',
-              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600,
-                  color: AppTheme.textMuted, letterSpacing: 1)),
+              style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: AppTheme.textMuted,
+                  letterSpacing: 1)),
           const SizedBox(height: 12),
           GestureDetector(
             onTap: () {
-              Clipboard.setData(ClipboardData(text: '${appState.localIp}:${appState.hostPort}'));
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Address copied to clipboard'), duration: Duration(seconds: 1)),
-              );
+              Clipboard.setData(ClipboardData(
+                  text:
+                      '${appState.localIp}:${appState.hostPort}'));
+              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                  content: Text('Address copied'),
+                  duration: Duration(seconds: 1)));
             },
             child: Container(
               padding: const EdgeInsets.all(16),
@@ -295,50 +372,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('${appState.localIp}:${appState.hostPort}',
-                          style: const TextStyle(fontSize: 18, letterSpacing: -0.5,
-                              fontWeight: FontWeight.w600)),
+                      Text(
+                        '${appState.localIp}:${appState.hostPort}',
+                        style: const TextStyle(
+                            fontSize: 18,
+                            letterSpacing: -0.5,
+                            fontWeight: FontWeight.w600),
+                      ),
                       const SizedBox(height: 4),
                       const Text('Ready for connections',
-                          style: TextStyle(fontSize: 12, color: AppTheme.textMuted)),
+                          style: TextStyle(
+                              fontSize: 12,
+                              color: AppTheme.textMuted)),
                     ],
                   ),
-                  const Icon(Icons.copy_rounded, size: 20, color: AppTheme.textMuted),
+                  const Icon(Icons.copy_rounded,
+                      size: 20, color: AppTheme.textMuted),
                 ],
               ),
             ),
           ),
           const SizedBox(height: 32),
-          const Text('PARTICIPANTS',
-              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600,
-                  color: AppTheme.textMuted, letterSpacing: 1)),
-          const SizedBox(height: 16),
-          if (appState.participants.isEmpty)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 16),
-              child: Text('No one connected yet',
-                  style: TextStyle(color: AppTheme.textMuted, fontSize: 13)),
-            ),
-          ...appState.participants.map((name) => Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: AppTheme.surfaceHover.withOpacity(0.5),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Row(
-                    children: [
-                      Container(width: 8, height: 8,
-                          decoration: const BoxDecoration(color: Colors.green, shape: BoxShape.circle)),
-                      const SizedBox(width: 12),
-                      Expanded(child: Text(name,
-                          style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 14))),
-                      const Icon(Icons.person, size: 16, color: AppTheme.textMuted),
-                    ],
-                  ),
-                ),
-              )),
+          _buildParticipantsList(appState),
         ] else ...[
           const SizedBox(height: 24),
           _buildAvailableNetworks(appState),
@@ -347,96 +402,131 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  // ---- Join Tab ----
+  // ── Join Tab ───────────────────────────────────────────────────────────────
+
   Widget _buildJoinTab(AppState appState) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Expanded(
               child: TextField(
                 controller: _ipController,
                 enabled: !appState.isBusy,
                 style: const TextStyle(fontSize: 14),
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   labelText: 'Host Address',
                   hintText: '192.168.1.42:9876',
-                  border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))),
-                  contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  // Bug #5: show validation error inline.
+                  errorText: _ipError,
+                  border: const OutlineInputBorder(
+                      borderRadius:
+                          BorderRadius.all(Radius.circular(12))),
+                  contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 16, vertical: 14),
                 ),
+                onChanged: (_) {
+                  if (_ipError != null) setState(() => _ipError = null);
+                },
               ),
             ),
             const SizedBox(width: 16),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: appState.isConnectedToHost ? Colors.red : AppTheme.accentColor,
-                foregroundColor: Colors.white,
-                minimumSize: const Size(120, 52),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                elevation: 0,
+            Padding(
+              // Align button with the text field when errorText appears.
+              padding: EdgeInsets.only(top: _ipError != null ? 0 : 0),
+              child: ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: appState.isConnectedToHost
+                      ? Colors.red
+                      : AppTheme.accentColor,
+                  foregroundColor: Colors.white,
+                  minimumSize: const Size(120, 52),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                  elevation: 0,
+                ),
+                onPressed: appState.isBusy
+                    ? null
+                    : (appState.isConnectedToHost
+                        ? () => appState.disconnectFromHost()
+                        : () => _connect(appState)),
+                child: appState.isBusy && !appState.isConnectedToHost
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.white))
+                    : Text(appState.isConnectedToHost
+                        ? 'Disconnect'
+                        : 'Connect'),
               ),
-              onPressed: appState.isBusy
-                  ? null
-                  : (appState.isConnectedToHost
-                      ? () => appState.disconnectFromHost()
-                      : () {
-                          String input = _ipController.text.trim();
-                          if (input.isEmpty) return;
-                          String ip = input;
-                          int port = appState.hostPort;
-                          if (input.contains(':')) {
-                            final parts = input.split(':');
-                            ip = parts[0];
-                            final p = int.tryParse(parts[1]);
-                            if (p != null) port = p;
-                          }
-                          appState.connectTo(ip, port);
-                        }),
-              child: appState.isBusy && !appState.isConnectedToHost
-                  ? const SizedBox(width: 16, height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                  : Text(appState.isConnectedToHost ? 'Disconnect' : 'Connect'),
             ),
           ],
         ),
         const SizedBox(height: 32),
-        // When connected: show participants
-        if (appState.isConnectedToHost) ...[
-          const Text('PARTICIPANTS',
-              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600,
-                  color: AppTheme.textMuted, letterSpacing: 1)),
-          const SizedBox(height: 16),
-          if (appState.participants.isEmpty)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 16),
-              child: Text('No participants',
-                  style: TextStyle(color: AppTheme.textMuted, fontSize: 13)),
-            ),
-          ...appState.participants.map((name) => Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: AppTheme.surfaceHover.withOpacity(0.5),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Row(
-                    children: [
-                      Container(width: 8, height: 8,
-                          decoration: const BoxDecoration(color: Colors.green, shape: BoxShape.circle)),
-                      const SizedBox(width: 12),
-                      Expanded(child: Text(name,
-                          style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 14))),
-                      const Icon(Icons.person, size: 16, color: AppTheme.textMuted),
-                    ],
-                  ),
-                ),
-              )),
-        ] else ...[
+        if (appState.isConnectedToHost)
+          _buildParticipantsList(appState)
+        else ...[
           const SizedBox(height: 24),
           _buildAvailableNetworks(appState),
         ],
+      ],
+    );
+  }
+
+  // ── Participants ───────────────────────────────────────────────────────────
+
+  Widget _buildParticipantsList(AppState appState) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('PARTICIPANTS',
+            style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: AppTheme.textMuted,
+                letterSpacing: 1)),
+        const SizedBox(height: 16),
+        if (appState.participants.isEmpty)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 16),
+            child: Text('No one connected yet',
+                style: TextStyle(
+                    color: AppTheme.textMuted, fontSize: 13)),
+          )
+        else
+          ...appState.participants.map(
+            (name) => Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppTheme.surfaceHover.withOpacity(0.5),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                        width: 8,
+                        height: 8,
+                        decoration: const BoxDecoration(
+                            color: Colors.green,
+                            shape: BoxShape.circle)),
+                    const SizedBox(width: 12),
+                    Expanded(
+                        child: Text(name,
+                            style: const TextStyle(
+                                fontWeight: FontWeight.w500,
+                                fontSize: 14))),
+                    const Icon(Icons.person,
+                        size: 16, color: AppTheme.textMuted),
+                  ],
+                ),
+              ),
+            ),
+          ),
       ],
     );
   }

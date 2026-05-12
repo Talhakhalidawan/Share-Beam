@@ -22,8 +22,6 @@ class AppState extends ChangeNotifier {
   String _deviceName = '';
   int    hostPort    = 9876;
 
-  // isScanning is cosmetic — the listener is always-on.
-  // We set it true briefly while (re)starting so the UI shows a spinner.
   bool isScanning = false;
 
   set setHostPort(int port) {
@@ -37,14 +35,17 @@ class AppState extends ChangeNotifier {
   bool isConnectedToHost = false;
   bool isBusy            = false;
 
-  String localIp         = '127.0.0.1';
+  String  localIp         = '127.0.0.1';
+  String? connectedHostIp;   // set when we successfully connect as a client
+  int     connectedHostPort = 9876;
+
   String connectionStatus = '';
   Timer? _statusTimer;
 
-  List<DiscoveredDevice> discoveredHosts    = [];
-  List<SharePayload>     history            = [];
-  Map<String, double>    downloadsProgress  = {};
-  List<String>           participants       = [];
+  List<DiscoveredDevice> discoveredHosts   = [];
+  List<SharePayload>     history           = [];
+  Map<String, double>    downloadsProgress = {};
+  List<String>           participants      = [];
 
   String get deviceName => _deviceName.isEmpty
       ? (kIsWeb ? 'Web User' : io.Platform.localHostname)
@@ -58,30 +59,27 @@ class AppState extends ChangeNotifier {
   AppState() {
     _initNetwork();
 
-    // Discovery — always-on; populates automatically.
     _discoveryService.devicesStream.listen((devices) {
       discoveredHosts = devices;
       notifyListeners();
     });
 
-    // Host streams.
     _hostService.payloadStream.listen(_handleIncomingPayload);
     _hostService.clientListStream.listen(_handleClientListUpdate);
     _hostService.statusStream.listen(_setStatus);
 
-    // Client streams.
     _clientService.payloadStream.listen(_handleIncomingPayload);
     _clientService.clientListStream.listen(_handleClientListUpdate);
     _clientService.statusStream.listen(_setStatus);
 
     _clientService.disconnectedStream.listen((_) {
       isConnectedToHost = false;
+      connectedHostIp   = null;
       participants.clear();
       _setStatus('The host has stopped the server. You have been disconnected.');
       notifyListeners();
     });
 
-    // File progress.
     _fileTransferService.progressStream.listen((map) {
       downloadsProgress.addAll(map);
       notifyListeners();
@@ -132,10 +130,10 @@ class AppState extends ChangeNotifier {
 
   Future<void> _initNetwork() async {
     localIp = await NetworkService.getLocalIp();
+    // Tell DiscoveryService our IP so it can filter self-announces (Bug #1).
+    _discoveryService.setLocalIp(localIp);
     notifyListeners();
 
-    // Open the persistent discovery socket at app launch.
-    // startDiscovery also sends a query burst so existing hosts appear instantly.
     if (!kIsWeb) {
       try {
         await _discoveryService.startDiscovery();
@@ -197,12 +195,11 @@ class AppState extends ChangeNotifier {
     notifyListeners();
 
     if (!kIsWeb) {
-      // stopHost() sends SB_GOODBYE 3× so peers remove us immediately.
-      try { await _discoveryService.stopHost(); }   catch (_) {}
-      // Keep the listener running — other hosts may still be visible.
-      try { _discoveryService.clearResults(); }     catch (_) {}
-      try { await _hostService.stopServer(); }      catch (_) {}
-      try { _fileTransferService.clearHostedFiles(); } catch (_) {}
+      try { await _discoveryService.stopHost(); }        catch (_) {}
+      // Keep the listener alive — other hosts may still be on the network.
+      try { _discoveryService.clearResults(); }          catch (_) {}
+      try { await _hostService.stopServer(); }           catch (_) {}
+      try { _fileTransferService.clearHostedFiles(); }   catch (_) {}
     }
 
     discoveredHosts  = [];
@@ -217,21 +214,19 @@ class AppState extends ChangeNotifier {
 
   // ── Discovery ──────────────────────────────────────────────────────────────
 
-  /// Sends a fresh query burst. Because the socket is always open this is
-  /// near-instant — the spinner shows for ~600 ms (the burst duration).
   Future<void> refreshDiscovery() async {
     if (kIsWeb || isScanning) return;
     isScanning = true;
     notifyListeners();
 
     try {
-      // startDiscovery is idempotent; it will also send a query burst.
+      // startDiscovery is idempotent; also sends a fresh query burst.
       await _discoveryService.startDiscovery();
     } catch (e) {
       print('[AppState] refreshDiscovery: $e');
     }
 
-    // 600 ms matches the query burst (3 × 200 ms) + a tiny margin.
+    // Match the burst duration (3 × 200 ms) + a small margin.
     await Future.delayed(const Duration(milliseconds: 700));
     isScanning = false;
     notifyListeners();
@@ -242,27 +237,33 @@ class AppState extends ChangeNotifier {
   Future<void> connectTo(String ip, int port) async {
     if (isBusy) return;
     isBusy = true;
-    _setStatus('Connecting to $ip:$port...', persistent: true);
+    _setStatus('Connecting to $ip:$port…', persistent: true);
 
     try {
       final success = await _clientService.connect(ip, port);
       isConnectedToHost = success;
+
       if (success) {
         _clientService.sendHandshake(deviceName);
+        connectedHostIp   = ip;
+        connectedHostPort = port;
         _setStatus('Connected to $ip:$port', persistent: true);
       } else {
+        // Bug fix: do NOT remove the device from the discovered list on failure.
+        // The host is likely still running; the failure may be transient
+        // (wrong routing table entry, Android radio wake-up delay, etc.).
+        // The TTL mechanism will remove it if it truly goes away.
         _setStatus(
-          'The host at $ip:$port is not available. '
-          'It may have been stopped or is unreachable.',
+          'Could not reach $ip:$port after 3 attempts. '
+          'Make sure both devices are on the same Wi-Fi network and the host '
+          'app is in the foreground.',
         );
-        discoveredHosts.removeWhere((d) => d.ip == ip && d.port == port);
       }
     } on io.SocketException catch (_) {
       _setStatus(
-        'The host at $ip:$port is not available. '
-        'It may have been stopped or is unreachable.',
+        'Network error reaching $ip:$port. '
+        'Check that both devices are on the same Wi-Fi and try again.',
       );
-      discoveredHosts.removeWhere((d) => d.ip == ip && d.port == port);
     } catch (_) {
       _setStatus('Could not connect. Please check the address and try again.');
     }
@@ -274,6 +275,7 @@ class AppState extends ChangeNotifier {
   Future<void> disconnectFromHost() async {
     if (!kIsWeb) _clientService.disconnect();
     isConnectedToHost = false;
+    connectedHostIp   = null;
     connectionStatus  = '';
     notifyListeners();
   }
@@ -284,11 +286,11 @@ class AppState extends ChangeNotifier {
     if (text.isEmpty) return;
 
     final payload = SharePayload(
-      id: _uuid.v4(),
-      type: FileTransferType.text,
-      fileName: 'Text Message',
-      size: text.length,
-      data: text,
+      id:         _uuid.v4(),
+      type:       FileTransferType.text,
+      fileName:   'Text Message',
+      size:       text.length,
+      data:       text,
       senderName: deviceName,
     );
 
@@ -310,11 +312,15 @@ class AppState extends ChangeNotifier {
 
     final stat = await file.stat();
     final payload = SharePayload(
-      id: _uuid.v4(),
-      type: FileTransferType.file,
-      fileName: file.path.split(io.Platform.pathSeparator).last,
-      size: stat.size,
+      id:         _uuid.v4(),
+      type:       FileTransferType.file,
+      fileName:   file.path.split(io.Platform.pathSeparator).last,
+      size:       stat.size,
       senderName: deviceName,
+      // Embed download coordinates so receivers can fetch the file.
+      // The HTTP server only runs on the HOST, so senderPort = hostPort.
+      senderIp:   localIp,
+      senderPort: hostPort,
     );
 
     history.add(payload);
@@ -338,15 +344,17 @@ class AppState extends ChangeNotifier {
 
     final dir = await getApplicationDocumentsDirectory();
     final downloadedFile = await _fileTransferService.downloadFile(
-      ip: ip,
-      port: port,
-      id: id,
-      fileName: fileName,
+      ip:            ip,
+      port:          port,
+      id:            id,
+      fileName:      fileName,
       saveDirectory: dir.path,
     );
 
     if (downloadedFile != null) {
-      _setStatus('File downloaded: ${downloadedFile.path}');
+      _setStatus('Downloaded: ${downloadedFile.path}');
+    } else {
+      _setStatus('Download failed. Is the host still online?');
     }
   }
 

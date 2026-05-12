@@ -5,82 +5,95 @@ import '../core/models.dart';
 
 class ClientService {
   WebSocketChannel? _channel;
-  
-  final _payloadController = StreamController<SharePayload>.broadcast();
-  Stream<SharePayload> get payloadStream => _payloadController.stream;
 
-  final _clientListController = StreamController<List<String>>.broadcast();
-  Stream<List<String>> get clientListStream => _clientListController.stream;
-
-  final _statusController = StreamController<String>.broadcast();
-  Stream<String> get statusStream => _statusController.stream;
-
-  /// Emits when the host drops the connection unexpectedly.
+  final _payloadController     = StreamController<SharePayload>.broadcast();
+  final _clientListController  = StreamController<List<String>>.broadcast();
+  final _statusController      = StreamController<String>.broadcast();
   final _disconnectedController = StreamController<void>.broadcast();
-  Stream<void> get disconnectedStream => _disconnectedController.stream;
 
-  /// Connects to a host at the given IP and port.
+  Stream<SharePayload>    get payloadStream      => _payloadController.stream;
+  Stream<List<String>>    get clientListStream   => _clientListController.stream;
+  Stream<String>          get statusStream       => _statusController.stream;
+  Stream<void>            get disconnectedStream => _disconnectedController.stream;
+
+  static const int      _maxAttempts    = 3;
+  static const Duration _retryDelay     = Duration(seconds: 1);
+  static const Duration _connectTimeout = Duration(seconds: 6);
+
+  /// Tries to connect up to [_maxAttempts] times.
+  ///
+  /// Why retries help with `EHOSTUNREACH`:
+  ///   The error usually means Linux's TCP SYN went out the wrong network
+  ///   interface (e.g. Ethernet instead of Wi-Fi) because the routing table
+  ///   prefers Ethernet for that subnet. After the first failure the kernel's
+  ///   route cache is updated and subsequent attempts often succeed. Android
+  ///   Wi-Fi power-save can also cause the first SYN to be dropped while the
+  ///   radio wakes up; a retry after 1 s reliably catches it.
   Future<bool> connect(String ip, int port) async {
     disconnect();
-    try {
-      final uri = Uri.parse('ws://$ip:$port/ws');
-      _channel = WebSocketChannel.connect(uri);
-      await _channel!.ready;
-      
-      _statusController.add('Connected to $ip:$port');
 
-      _channel!.stream.listen(
-        (message) {
-          if (message is String) {
-            _handleIncomingMessage(message);
-          }
-        },
-        onDone: () => _handleDisconnect(),
-        onError: (e) => _handleDisconnect(),
-      );
-      return true;
-    } catch (e) {
-      print('[ClientService] Connection failed: $e');
-      // Don't emit raw error to status — AppState handles friendly messages.
-      return false;
+    for (int attempt = 1; attempt <= _maxAttempts; attempt++) {
+      try {
+        final uri = Uri.parse('ws://$ip:$port/ws');
+        _channel = WebSocketChannel.connect(uri);
+
+        // ready completes once the WS handshake is done or throws on failure.
+        await _channel!.ready.timeout(_connectTimeout);
+
+        _channel!.stream.listen(
+          (message) {
+            if (message is String) _handleMessage(message);
+          },
+          onDone:  _handleDisconnect,
+          onError: (_) => _handleDisconnect(),
+        );
+
+        return true;
+      } catch (e) {
+        print('[ClientService] Attempt $attempt/$_maxAttempts failed: $e');
+        try { await _channel?.sink.close(); } catch (_) {}
+        _channel = null;
+
+        if (attempt < _maxAttempts) {
+          await Future.delayed(_retryDelay);
+        }
+      }
     }
+
+    return false;
   }
 
-  void _handleIncomingMessage(String message) {
+  void _handleMessage(String message) {
     try {
       final data = jsonDecode(message);
       if (data is! Map<String, dynamic>) return;
 
+      // Host keep-alive ping — no action needed.
+      if (data['type'] == 'ping') return;
+
       if (data['type'] == 'client_list') {
-        final List<dynamic> list = data['clients'] ?? [];
-        _clientListController.add(list.cast<String>());
+        final list = (data['clients'] as List<dynamic>? ?? []).cast<String>();
+        _clientListController.add(list);
         return;
       }
 
-      // Assume it's a SharePayload
-      final payload = SharePayload.fromJson(data);
-      _payloadController.add(payload);
+      _payloadController.add(SharePayload.fromJson(data));
     } catch (e) {
-      print('[ClientService] Error parsing message: $e');
+      print('[ClientService] Parse error: $e');
     }
   }
 
   void sendHandshake(String deviceName) {
-    if (_channel == null) return;
-    final message = jsonEncode({
-      'type': 'handshake',
-      'senderName': deviceName,
-    });
-    try {
-      _channel!.sink.add(message);
-    } catch (_) {}
+    _send(jsonEncode({'type': 'handshake', 'senderName': deviceName}));
   }
 
   void sendPayload(SharePayload payload) {
+    _send(jsonEncode(payload.toJson()));
+  }
+
+  void _send(String message) {
     if (_channel == null) return;
-    try {
-      _channel!.sink.add(jsonEncode(payload.toJson()));
-    } catch (_) {}
+    try { _channel!.sink.add(message); } catch (_) {}
   }
 
   void _handleDisconnect() {
@@ -91,7 +104,7 @@ class ClientService {
   }
 
   void disconnect() {
-    _channel?.sink.close();
+    try { _channel?.sink.close(); } catch (_) {}
     _channel = null;
   }
 
