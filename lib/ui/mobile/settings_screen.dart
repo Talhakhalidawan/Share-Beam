@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/app_state.dart';
+import '../../core/prefs.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({Key? key}) : super(key: key);
@@ -37,6 +38,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
     super.dispose();
   }
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  // DIALOGS
+  // ═══════════════════════════════════════════════════════════════════════════
+
   Widget _iosDialog({
     required String title,
     required String subtitle,
@@ -45,9 +50,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return Dialog(
       backgroundColor: _iosCardBg,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      insetPadding: const EdgeInsets.symmetric(horizontal: 32),
+      // Match settings page body margin (20) minus a tiny bit so dialog feels native
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16),
       child: Padding(
-        padding: const EdgeInsets.all(24),
+        // Reduced horizontal padding so content aligns with settings cards
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -173,22 +180,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
                 ),
               ),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  Checkbox(
-                    value: setDefault,
-                    activeColor: _iosBlue,
-                    side: const BorderSide(color: _iosGray),
-                    onChanged: (v) => setSt(() => setDefault = v ?? false),
-                  ),
-                  const Text(
-                    'Set as default',
-                    style: TextStyle(fontSize: 14, color: _iosGray),
-                  ),
-                ],
+              // Tight vertical spacing for checkbox row
+              const SizedBox(height: 4),
+              GestureDetector(
+                behavior: HitTestBehavior.translucent,
+                onTap: () => setSt(() => setDefault = !setDefault),
+                child: Row(
+                  children: [
+                    Checkbox(
+                      value: setDefault,
+                      activeColor: _iosBlue,
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      visualDensity: VisualDensity.compact,
+                      onChanged: (v) => setSt(() => setDefault = v ?? false),
+                    ),
+                    const SizedBox(width: 4),
+                    const Text(
+                      'Set as default',
+                      style: TextStyle(fontSize: 14, color: _iosGray),
+                    ),
+                  ],
+                ),
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 12),
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
@@ -203,9 +217,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                   onPressed: appState.isBusy
                       ? null
-                      : () {
+                      : () async {
                           final port = int.tryParse(controller.text);
-                          if (port != null) appState.setHostPort = port;
+                          if (port != null) {
+                            appState.setHostPort = port;
+                            if (setDefault) {
+                              await Prefs.setDefaultPort(port);
+                            }
+                          }
                           Navigator.of(context).pop();
                           appState.startHosting();
                         },
@@ -257,22 +276,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
                 ),
               ),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  Checkbox(
-                    value: connectAuto,
-                    activeColor: _iosBlue,
-                    side: const BorderSide(color: _iosGray),
-                    onChanged: (v) => setSt(() => connectAuto = v ?? false),
-                  ),
-                  const Text(
-                    'Connect automatically',
-                    style: TextStyle(fontSize: 14, color: _iosGray),
-                  ),
-                ],
+              const SizedBox(height: 4),
+              GestureDetector(
+                behavior: HitTestBehavior.translucent,
+                onTap: () => setSt(() => connectAuto = !connectAuto),
+                child: Row(
+                  children: [
+                    Checkbox(
+                      value: connectAuto,
+                      activeColor: _iosBlue,
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      visualDensity: VisualDensity.compact,
+                      onChanged: (v) => setSt(() => connectAuto = v ?? false),
+                    ),
+                    const SizedBox(width: 4),
+                    const Text(
+                      'Connect automatically',
+                      style: TextStyle(fontSize: 14, color: _iosGray),
+                    ),
+                  ],
+                ),
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 12),
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
@@ -287,7 +312,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                   onPressed: appState.isBusy
                       ? null
-                      : () {
+                      : () async {
                           final input = controller.text.trim();
                           Navigator.of(context).pop();
                           if (input.isEmpty) return;
@@ -300,6 +325,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             final p = int.tryParse(parts[1]);
                             if (p != null) port = p;
                           }
+
+                          if (connectAuto) {
+                            await Prefs.addAutoConnectHost(ip, port, 'Manual');
+                          }
+
                           appState.connectTo(ip, port);
                         },
                   child: const Text(

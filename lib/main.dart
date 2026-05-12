@@ -3,16 +3,17 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import 'core/app_state.dart';
+import 'core/prefs.dart';
 import 'ui/shared/theme.dart';
 import 'ui/mobile/home_screen.dart';
 import 'ui/mobile/settings_screen.dart';
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await Prefs.init();
 
-  // Note: "KeyDownEvent already pressed" warnings on Linux are a known
-  // harmless Flutter framework bug when Alt-Tabbing. They don't affect
-  // app functionality. See: github.com/flutter/flutter/issues/171390
+  // Linux desktop: harmless keyboard warnings on Alt-Tab are a known
+  // Flutter engine issue (#171390). They don't affect release builds.
   runApp(
     ChangeNotifierProvider(
       create: (_) => AppState(),

@@ -11,6 +11,7 @@ import '../services/client_service.dart';
 import '../services/file_transfer_service.dart';
 import '../services/network_service.dart';
 import 'models.dart';
+import 'prefs.dart';
 
 class AppState extends ChangeNotifier {
   final DiscoveryService    _discoveryService    = DiscoveryService();
@@ -61,6 +62,12 @@ class AppState extends ChangeNotifier {
 
     _discoveryService.devicesStream.listen((devices) {
       discoveredHosts = devices;
+
+      // Auto-connect to saved hosts when discovered
+      if (!isHosting && !isConnectedToHost && !isBusy && devices.isNotEmpty) {
+        _tryAutoConnect(devices);
+      }
+
       notifyListeners();
     });
 
@@ -122,9 +129,34 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Tries to auto-connect to any discovered host that is in the saved list.
+  void _tryAutoConnect(List<DiscoveredDevice> devices) {
+    final saved = Prefs.getAutoConnectHosts();
+    if (saved.isEmpty) return;
+
+    for (final device in devices) {
+      for (final entry in saved) {
+        if (device.ip == entry['ip'] && device.port == entry['port']) {
+          // Don't auto-connect to self
+          if (device.ip == localIp && device.port == hostPort) continue;
+          print('[AppState] Auto-connecting to ${device.name}');
+          connectTo(device.ip, device.port);
+          return;
+        }
+      }
+    }
+  }
+
   Future<void> _initNetwork() async {
     localIp = await NetworkService.getLocalIp();
     _discoveryService.setLocalIp(localIp);
+
+    // Load saved default port
+    final savedPort = Prefs.getDefaultPort();
+    if (savedPort != null && savedPort > 0 && savedPort <= 65535) {
+      hostPort = savedPort;
+    }
+
     notifyListeners();
 
     if (!kIsWeb) {
@@ -187,12 +219,12 @@ class AppState extends ChangeNotifier {
 
     if (!kIsWeb) {
       try { await _discoveryService.stopHost(); }   catch (_) {}
-      try { _discoveryService.clearResults(); }     catch (_) {}
       try { await _hostService.stopServer(); }      catch (_) {}
       try { _fileTransferService.clearHostedFiles(); } catch (_) {}
     }
 
-    discoveredHosts  = [];
+    // Remove only self from discovered list, don't clear everything
+    discoveredHosts.removeWhere((d) => d.ip == localIp && d.port == hostPort);
     isHosting        = false;
     connectionStatus = '';
     isBusy           = false;
@@ -233,8 +265,6 @@ class AppState extends ChangeNotifier {
         connectedHostPort = port;
         _setStatus('Connected to $ip:$port', persistent: true);
       } else {
-        // CRITICAL: Do NOT remove from discovered list on failure.
-        // The host may still be alive; TTL will remove it if it dies.
         _setStatus(
           'Could not reach $ip:$port after 3 attempts. '
           'Make sure both devices are on the same Wi-Fi network and the host '
