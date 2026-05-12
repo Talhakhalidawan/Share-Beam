@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 import 'package:shelf_router/shelf_router.dart';
+import 'package:device_info_plus/device_info_plus.dart';
 
 import '../services/discovery_service.dart';
 import '../services/host_service.dart';
@@ -12,6 +13,14 @@ import '../services/file_transfer_service.dart';
 import '../services/network_service.dart';
 import 'models.dart';
 import 'prefs.dart';
+
+enum NotificationType { info, error, success }
+
+class AppNotification {
+  final String message;
+  final NotificationType type;
+  AppNotification(this.message, this.type);
+}
 
 class AppState extends ChangeNotifier {
   final DiscoveryService    _discoveryService    = DiscoveryService();
@@ -47,13 +56,14 @@ class AppState extends ChangeNotifier {
   List<SharePayload>     history           = [];
   Map<String, double>    downloadsProgress = {};
   List<String>           participants      = [];
+  final StreamController<AppNotification> _notificationController = StreamController<AppNotification>.broadcast();
+  Stream<AppNotification> get notificationStream => _notificationController.stream;
 
-  String get deviceName => _deviceName.isEmpty
-      ? (kIsWeb ? 'Web User' : io.Platform.localHostname)
-      : _deviceName;
+  String get deviceName => _deviceName;
 
   set deviceName(String name) {
     _deviceName = name.trim();
+    Prefs.setDeviceName(_deviceName);
     notifyListeners();
   }
 
@@ -97,6 +107,19 @@ class AppState extends ChangeNotifier {
     _statusTimer?.cancel();
     connectionStatus = status;
     notifyListeners();
+
+    if (status.isNotEmpty) {
+      final type = (status.toLowerCase().contains('error') || 
+                   status.toLowerCase().contains('failed') ||
+                   status.toLowerCase().contains('could not') ||
+                   status.toLowerCase().contains('already in use'))
+          ? NotificationType.error
+          : (status.toLowerCase().contains('connected') || status.toLowerCase().contains('running'))
+              ? NotificationType.success
+              : NotificationType.info;
+      
+      _notificationController.add(AppNotification(status, type));
+    }
 
     if (!persistent && status.isNotEmpty) {
       _statusTimer = Timer(const Duration(seconds: 3), () {
@@ -151,20 +174,24 @@ class AppState extends ChangeNotifier {
     localIp = await NetworkService.getLocalIp();
     _discoveryService.setLocalIp(localIp);
 
-    // Load saved default port
-    final savedPort = Prefs.getDefaultPort();
-    if (savedPort != null && savedPort > 0 && savedPort <= 65535) {
-      hostPort = savedPort;
+    // Start discovery early
+    if (!kIsWeb) {
+      _discoveryService.startDiscovery().catchError((e) {
+        print('[AppState] Discovery start failed: $e');
+      });
     }
 
-    notifyListeners();
-
-    if (!kIsWeb) {
-      try {
-        await _discoveryService.startDiscovery();
-      } catch (e) {
-        print('[AppState] Discovery start failed: $e');
-      }
+    // Load saved name or detect device model in background
+    final savedName = Prefs.getDeviceName();
+    if (savedName != null && savedName.isNotEmpty) {
+      _deviceName = savedName;
+      notifyListeners();
+    } else {
+      _getDeviceModelName().then((model) {
+        _deviceName = model;
+        Prefs.setDeviceName(_deviceName);
+        notifyListeners();
+      });
     }
   }
 
@@ -362,6 +389,33 @@ class AppState extends ChangeNotifier {
     } else {
       _setStatus('Download failed. Is the host still online?');
     }
+  }
+
+  Future<String> _getDeviceModelName() async {
+    if (kIsWeb) return 'Web User';
+    
+    final deviceInfo = DeviceInfoPlugin();
+    try {
+      if (io.Platform.isAndroid) {
+        final androidInfo = await deviceInfo.androidInfo;
+        return '${androidInfo.manufacturer} ${androidInfo.model}';
+      } else if (io.Platform.isIOS) {
+        final iosInfo = await deviceInfo.iosInfo;
+        return iosInfo.name;
+      } else if (io.Platform.isLinux) {
+        final linuxInfo = await deviceInfo.linuxInfo;
+        return linuxInfo.prettyName;
+      } else if (io.Platform.isMacOS) {
+        final macInfo = await deviceInfo.macOsInfo;
+        return macInfo.model;
+      } else if (io.Platform.isWindows) {
+        final winInfo = await deviceInfo.windowsInfo;
+        return winInfo.computerName;
+      }
+    } catch (e) {
+      print('[AppState] Failed to get device model: $e');
+    }
+    return io.Platform.localHostname;
   }
 
   @override

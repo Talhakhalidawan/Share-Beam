@@ -93,8 +93,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
             controller: controller,
             autofocus: true,
             textCapitalization: TextCapitalization.words,
+            style: const TextStyle(color: _iosText),
             decoration: InputDecoration(
               hintText: 'e.g. Talha\'s Phone',
+              hintStyle: const TextStyle(color: _iosGray),
               filled: true,
               fillColor: _iosBg,
               border: OutlineInputBorder(
@@ -146,7 +148,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void _showHostDialog(AppState appState) {
     final controller =
         TextEditingController(text: appState.hostPort.toString());
-    bool setDefault = false;
 
     showDialog(
       context: context,
@@ -160,8 +161,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
               TextField(
                 controller: controller,
                 keyboardType: TextInputType.number,
+                inputFormatters: [LengthLimitingTextInputFormatter(4)],
+                style: const TextStyle(color: _iosText),
                 decoration: InputDecoration(
                   hintText: 'Enter Port (eg. 5500)',
+                  hintStyle: const TextStyle(color: _iosGray),
                   filled: true,
                   fillColor: _iosBg,
                   border: OutlineInputBorder(
@@ -180,28 +184,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
                 ),
               ),
-              // Tight vertical spacing for checkbox row
-              const SizedBox(height: 4),
-              GestureDetector(
-                behavior: HitTestBehavior.translucent,
-                onTap: () => setSt(() => setDefault = !setDefault),
-                child: Row(
-                  children: [
-                    Checkbox(
-                      value: setDefault,
-                      activeColor: _iosBlue,
-                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      visualDensity: VisualDensity.compact,
-                      onChanged: (v) => setSt(() => setDefault = v ?? false),
-                    ),
-                    const SizedBox(width: 4),
-                    const Text(
-                      'Set as default',
-                      style: TextStyle(fontSize: 14, color: _iosGray),
-                    ),
-                  ],
-                ),
-              ),
               const SizedBox(height: 12),
               SizedBox(
                 width: double.infinity,
@@ -217,13 +199,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                   onPressed: appState.isBusy
                       ? null
-                      : () async {
+                      : () {
                           final port = int.tryParse(controller.text);
                           if (port != null) {
                             appState.setHostPort = port;
-                            if (setDefault) {
-                              await Prefs.setDefaultPort(port);
-                            }
                           }
                           Navigator.of(context).pop();
                           appState.startHosting();
@@ -256,8 +235,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
             children: [
               TextField(
                 controller: controller,
+                style: const TextStyle(color: _iosText),
                 decoration: InputDecoration(
                   hintText: 'Enter Host (eg. 192.168.1.42:9876)',
+                  hintStyle: const TextStyle(color: _iosGray),
                   filled: true,
                   fillColor: _iosBg,
                   border: OutlineInputBorder(
@@ -285,11 +266,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     Checkbox(
                       value: connectAuto,
                       activeColor: _iosBlue,
+                      side: const BorderSide(color: _iosGray, width: 1.5),
                       materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       visualDensity: VisualDensity.compact,
                       onChanged: (v) => setSt(() => connectAuto = v ?? false),
                     ),
-                    const SizedBox(width: 4),
+                    const SizedBox(width: 2),
                     const Text(
                       'Connect automatically',
                       style: TextStyle(fontSize: 14, color: _iosGray),
@@ -418,10 +400,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (appState.connectionStatus.isNotEmpty) ...[
-              _buildStatusBanner(appState),
-              const SizedBox(height: 16),
-            ],
+            const SizedBox(height: 16),
             _buildNameCard(appState),
             const SizedBox(height: 24),
             if (isHosting) ...[
@@ -458,15 +437,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     fontSize: 16, fontWeight: FontWeight.w500, color: _iosText,
                   ),
                 ),
-                Row(
-                  children: [
-                    Text(
-                      appState.deviceName,
-                      style: const TextStyle(fontSize: 16, color: _iosGray),
-                    ),
-                    const SizedBox(width: 4),
-                    const Icon(Icons.chevron_right, color: _iosBlue, size: 20),
-                  ],
+                Expanded(
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      Flexible(
+                        child: Text(
+                          appState.deviceName,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 16, color: _iosGray),
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      const Icon(Icons.chevron_right, color: _iosBlue, size: 20),
+                    ],
+                  ),
                 ),
               ],
             ),
@@ -476,42 +461,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  Widget _buildStatusBanner(AppState appState) {
-    final isError = appState.connectionStatus.contains('Failed') ||
-        appState.connectionStatus.contains('error') ||
-        appState.connectionStatus.contains('already in use') ||
-        appState.connectionStatus.contains('Could not') ||
-        appState.connectionStatus.contains('not available') ||
-        appState.connectionStatus.contains('Network error');
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: BoxDecoration(
-        color: isError ? Colors.red.shade50 : Colors.green.shade50,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        children: [
-          Icon(
-            isError ? Icons.error_outline : Icons.check_circle_outline,
-            size: 18,
-            color: isError ? Colors.red : Colors.green,
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              appState.connectionStatus,
-              style: TextStyle(fontSize: 13, color: Colors.grey.shade800),
-            ),
-          ),
-          GestureDetector(
-            onTap: () => appState.clearStatus(),
-            child: Icon(Icons.close, size: 16, color: Colors.grey.shade600),
-          ),
-        ],
-      ),
-    );
-  }
 
   Widget _buildAvailableHosts(AppState appState) {
     return Column(
@@ -616,15 +565,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     fontSize: 16, fontWeight: FontWeight.w500, color: _iosText,
                   ),
                 ),
-                Row(
-                  children: [
-                    Text(
-                      '${appState.localIp}:${appState.hostPort}',
-                      style: const TextStyle(fontSize: 16, color: _iosGray),
-                    ),
-                    const SizedBox(width: 8),
-                    const Icon(Icons.copy, size: 18, color: _iosGray),
-                  ],
+                Expanded(
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      Flexible(
+                        child: Text(
+                          '${appState.localIp}:${appState.hostPort}',
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 16, color: _iosGray),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      const Icon(Icons.copy, size: 18, color: _iosGray),
+                    ],
+                  ),
                 ),
               ],
             ),
@@ -740,12 +695,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: isPlaceholder ? FontWeight.w400 : FontWeight.w500,
-              color: isPlaceholder ? _iosGray : _iosText,
+          Expanded(
+            child: Text(
+              label,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: isPlaceholder ? FontWeight.w400 : FontWeight.w500,
+                color: isPlaceholder ? _iosGray : _iosText,
+              ),
             ),
           ),
           trailing,

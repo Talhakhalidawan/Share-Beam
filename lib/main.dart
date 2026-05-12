@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import 'core/app_state.dart';
@@ -7,6 +6,7 @@ import 'core/prefs.dart';
 import 'ui/shared/theme.dart';
 import 'ui/mobile/home_screen.dart';
 import 'ui/mobile/settings_screen.dart';
+import 'ui/shared/floating_notifications.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -35,6 +35,9 @@ class ShareBeamApp extends StatelessWidget {
       routes: {
         '/': (context) => const HomeScreen(),
         '/settings': (context) => const SettingsScreen(),
+      },
+      builder: (context, child) {
+        return FloatingNotifications(child: child!);
       },
     );
   }

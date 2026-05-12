@@ -1,0 +1,54 @@
+Analyzing Sharebeam...                                          
+
+   info • The imported package 'uuid' isn't a dependency of the importing package • lib/core/app_state.dart:5:8 • depend_on_referenced_packages
+   info • Don't invoke 'print' in production code • lib/core/app_state.dart:165:11 • avoid_print
+   info • Don't invoke 'print' in production code • lib/core/app_state.dart:192:9 • avoid_print
+   info • Don't invoke 'print' in production code • lib/core/app_state.dart:218:9 • avoid_print
+   info • Don't invoke 'print' in production code • lib/core/app_state.dart:271:7 • avoid_print
+   info • Don't invoke 'print' in production code • lib/core/app_state.dart:415:7 • avoid_print
+warning • Unused import: 'dart:convert' • lib/core/models.dart:1:8 • unused_import
+warning • Unused import: 'package:flutter/services.dart' • lib/main.dart:2:8 • unused_import
+   info • Parameter 'key' could be a super parameter • lib/main.dart:27:9 • use_super_parameters
+   info • Don't invoke 'print' in production code • lib/services/client_service.dart:32:7 • avoid_print
+   info • Don't invoke 'print' in production code • lib/services/client_service.dart:46:9 • avoid_print
+   info • Don't invoke 'print' in production code • lib/services/client_service.dart:49:9 • avoid_print
+   info • Don't invoke 'print' in production code • lib/services/client_service.dart:70:9 • avoid_print
+   info • Don't invoke 'print' in production code • lib/services/client_service.dart:78:13 • avoid_print
+   info • Don't invoke 'print' in production code • lib/services/client_service.dart:87:9 • avoid_print
+   info • Don't invoke 'print' in production code • lib/services/client_service.dart:93:9 • avoid_print
+   info • Don't invoke 'print' in production code • lib/services/client_service.dart:99:9 • avoid_print
+   info • Don't invoke 'print' in production code • lib/services/client_service.dart:130:7 • avoid_print
+   info • Don't invoke 'print' in production code • lib/services/discovery_service.dart:80:11 • avoid_print
+   info • Don't invoke 'print' in production code • lib/services/discovery_service.dart:93:7 • avoid_print
+   info • Don't invoke 'print' in production code • lib/services/discovery_service.dart:109:5 • avoid_print
+   info • Don't invoke 'print' in production code • lib/services/discovery_service.dart:158:5 • avoid_print
+   info • Don't invoke 'print' in production code • lib/services/discovery_service.dart:173:5 • avoid_print
+   info • Don't invoke 'print' in production code • lib/services/discovery_service.dart:285:7 • avoid_print
+   info • Don't invoke 'print' in production code • lib/services/discovery_service.dart:304:9 • avoid_print
+   info • Don't invoke 'print' in production code • lib/services/file_transfer_service.dart:76:7 • avoid_print
+   info • Don't invoke 'print' in production code • lib/services/host_service.dart:59:5 • avoid_print
+   info • Don't invoke 'print' in production code • lib/services/host_service.dart:92:7 • avoid_print
+   info • Don't invoke 'print' in production code • lib/services/host_service.dart:149:5 • avoid_print
+   info • Don't invoke 'print' in production code • lib/services/network_service.dart:44:7 • avoid_print
+   info • Parameter 'key' could be a super parameter • lib/ui/mobile/home_screen.dart:11:9 • use_super_parameters
+   info • 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss • lib/ui/mobile/home_screen.dart:100:30 • deprecated_member_use
+   info • 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss • lib/ui/mobile/home_screen.dart:101:30 • deprecated_member_use
+   info • 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss • lib/ui/mobile/home_screen.dart:154:43 • deprecated_member_use
+   info • Parameter 'key' could be a super parameter • lib/ui/mobile/home_screen.dart:215:9 • use_super_parameters
+   info • Parameter 'key' could be a super parameter • lib/ui/mobile/settings_screen.dart:9:9 • use_super_parameters
+warning • The value of the local variable 'setDefault' isn't used • lib/ui/mobile/settings_screen.dart:151:10 • unused_local_variable
+warning • The declaration '_buildStatusBanner' isn't referenced • lib/ui/mobile/settings_screen.dart:458:10 • unused_element
+   info • Use 'const' with the constructor to improve performance • lib/ui/mobile/settings_screen.dart:530:27 • prefer_const_constructors
+   info • Use 'const' literals as arguments to constructors of '@immutable' classes • lib/ui/mobile/settings_screen.dart:532:29 • prefer_const_literals_to_create_immutables
+   info • Use 'const' with the constructor to improve performance • lib/ui/mobile/settings_screen.dart:533:21 • prefer_const_constructors
+   info • Use 'const' with the constructor to improve performance • lib/ui/mobile/settings_screen.dart:535:30 • prefer_const_constructors
+   info • Unnecessary use of 'toList' in a spread • lib/ui/mobile/settings_screen.dart:554:18 • unnecessary_to_list_in_spreads
+   info • Unnecessary use of 'toList' in a spread • lib/ui/mobile/settings_screen.dart:650:20 • unnecessary_to_list_in_spreads
+   info • Unnecessary use of 'toList' in a spread • lib/ui/mobile/settings_screen.dart:692:20 • unnecessary_to_list_in_spreads
+   info • Parameter 'key' could be a super parameter • lib/ui/shared/floating_notifications.dart:8:9 • use_super_parameters
+   info • Parameter 'key' could be a super parameter • lib/ui/shared/floating_notifications.dart:82:9 • use_super_parameters
+   info • 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss • lib/ui/shared/floating_notifications.dart:113:35 • deprecated_member_use
+   info • 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss • lib/ui/shared/floating_notifications.dart:118:47 • deprecated_member_use
+   info • 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss • lib/ui/shared/floating_notifications.dart:128:39 • deprecated_member_use
+
+50 issues found. (ran in 7.2s)

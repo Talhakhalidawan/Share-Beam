@@ -12,13 +12,13 @@ class Prefs {
     return _instance!;
   }
 
-  // ── Default host port ──────────────────────────────────────────────────────
-  static int? getDefaultPort() {
-    return _i.getInt('default_host_port');
+  // ── Device Name ───────────────────────────────────────────────────────────
+  static String? getDeviceName() {
+    return _i.getString('device_name');
   }
 
-  static Future<bool> setDefaultPort(int port) async {
-    return _i.setInt('default_host_port', port);
+  static Future<bool> setDeviceName(String name) async {
+    return _i.setString('device_name', name);
   }
 
   // ── Auto-connect hosts (JSON strings) ──────────────────────────────────────
