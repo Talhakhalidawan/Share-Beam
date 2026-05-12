@@ -7,9 +7,9 @@ class SharePayload {
   final FileTransferType type;
   final String fileName;
   final int size;
-  final String? data; // for text (raw string) or base64 file content
+  final String? data;
   final String senderName;
-  final DateTime timestamp;   // <-- new field
+  final DateTime timestamp;
 
   SharePayload({
     required this.id,
@@ -52,8 +52,14 @@ class DiscoveredDevice {
   final String name;
   final String ip;
   final int port;
+  final DateTime lastSeen;
 
-  DiscoveredDevice({required this.name, required this.ip, required this.port});
+  DiscoveredDevice({
+    required this.name,
+    required this.ip,
+    required this.port,
+    DateTime? lastSeen,
+  }) : lastSeen = lastSeen ?? DateTime.now();
 
   @override
   bool operator ==(Object other) =>

@@ -13,17 +13,14 @@ import '../services/network_service.dart';
 import 'models.dart';
 
 class AppState extends ChangeNotifier {
-  final DiscoveryService    _discoveryService  = DiscoveryService();
-  final HostService         _hostService       = HostService();
-  final ClientService       _clientService     = ClientService();
+  final DiscoveryService _discoveryService = DiscoveryService();
+  final HostService _hostService = HostService();
+  final ClientService _clientService = ClientService();
   final FileTransferService _fileTransferService = FileTransferService();
   final Uuid _uuid = const Uuid();
 
   String _deviceName = '';
-  int  hostPort  = 9876;
-
-  // isScanning is now purely cosmetic — the listener is always-on.
-  // We briefly set it true while the listener is (re)starting.
+  int hostPort = 9876;
   bool isScanning = false;
 
   set setHostPort(int port) {
@@ -33,18 +30,17 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  bool isHosting         = false;
+  bool isHosting = false;
   bool isConnectedToHost = false;
-  bool isBusy            = false;
+  bool isBusy = false;
 
-  String localIp         = '127.0.0.1';
+  String localIp = '127.0.0.1';
   String connectionStatus = '';
   Timer? _statusTimer;
-
   List<DiscoveredDevice> discoveredHosts = [];
-  List<SharePayload>     history         = [];
-  Map<String, double>    downloadsProgress = {};
-  List<String>           participants    = [];
+  List<SharePayload> history = [];
+  Map<String, double> downloadsProgress = {};
+  List<String> participants = [];
 
   String get deviceName => _deviceName.isEmpty
       ? (kIsWeb ? 'Web User' : io.Platform.localHostname)
@@ -58,37 +54,43 @@ class AppState extends ChangeNotifier {
   AppState() {
     _initNetwork();
 
-    // Discovery — always-on stream of nearby hosts.
+    // Continuous background discovery — starts automatically
     _discoveryService.devicesStream.listen((devices) {
-      discoveredHosts = devices;
+      // Filter out our own host so we don't see ourselves in the list
+      discoveredHosts = devices.where((d) {
+        if (isHosting && d.ip == localIp && d.port == hostPort) return false;
+        return true;
+      }).toList();
       notifyListeners();
     });
 
-    // Hosting streams.
+    if (!kIsWeb) {
+      _discoveryService.startDiscovery();
+    }
+
+    // Hosting Streams
     _hostService.payloadStream.listen(_handleIncomingPayload);
     _hostService.clientListStream.listen(_handleClientListUpdate);
-    _hostService.statusStream.listen((s) => _setStatus(s));
+    _hostService.statusStream.listen((status) => _setStatus(status));
 
-    // Client streams.
+    // Client Streams
     _clientService.payloadStream.listen(_handleIncomingPayload);
     _clientService.clientListStream.listen(_handleClientListUpdate);
-    _clientService.statusStream.listen((s) => _setStatus(s));
+    _clientService.statusStream.listen((status) => _setStatus(status));
 
+    // When the host drops the connection, reset the client state
     _clientService.disconnectedStream.listen((_) {
       isConnectedToHost = false;
       participants.clear();
       _setStatus('The host has stopped the server. You have been disconnected.');
-      notifyListeners();
     });
 
-    // Progress.
-    _fileTransferService.progressStream.listen((map) {
-      downloadsProgress.addAll(map);
+    // Progress
+    _fileTransferService.progressStream.listen((progressMap) {
+      downloadsProgress.addAll(progressMap);
       notifyListeners();
     });
   }
-
-  // ── Status helpers ─────────────────────────────────────────────────────────
 
   void _setStatus(String status, {bool persistent = false}) {
     _statusTimer?.cancel();
@@ -109,8 +111,6 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  // ── Payload / participant helpers ──────────────────────────────────────────
-
   void _handleIncomingPayload(SharePayload payload) {
     if (!history.any((item) => item.id == payload.id)) {
       history.add(payload);
@@ -121,31 +121,21 @@ class AppState extends ChangeNotifier {
   void _handleClientListUpdate(List<String> rawList) {
     final myName = deviceName;
     participants = rawList.map((name) {
-      if (name == '$myName (Host)') return '$myName (Host, You)';
-      if (name == myName)            return '$myName (You)';
+      if (name == '$myName (Host)') {
+        return '$myName (Host, You)';
+      }
+      if (name == myName) {
+        return '$myName (You)';
+      }
       return name;
     }).toList();
     notifyListeners();
   }
 
-  // ── Network init ───────────────────────────────────────────────────────────
-
   Future<void> _initNetwork() async {
     localIp = await NetworkService.getLocalIp();
     notifyListeners();
-
-    // Start the persistent discovery listener as soon as the app launches.
-    // This means the device list populates automatically — no manual refresh needed.
-    if (!kIsWeb) {
-      try {
-        await _discoveryService.startDiscovery();
-      } catch (e) {
-        print('[AppState] Discovery listener failed to start: $e');
-      }
-    }
   }
-
-  // ── Hosting ────────────────────────────────────────────────────────────────
 
   Future<void> startHosting() async {
     if (isBusy || isHosting) return;
@@ -168,7 +158,7 @@ class AppState extends ChangeNotifier {
       try {
         await _discoveryService.startHost(deviceName, hostPort);
       } catch (e) {
-        print('[AppState] Discovery broadcast failed: $e');
+        print('[AppState] mDNS advertising failed: $e');
       }
 
       isHosting = true;
@@ -195,18 +185,16 @@ class AppState extends ChangeNotifier {
     notifyListeners();
 
     if (!kIsWeb) {
-      // Stop broadcasting our presence (sends goodbye 3×).
       try { await _discoveryService.stopHost(); } catch (_) {}
-      // DO NOT stop the listener — other hosts may still be around.
-      try { _discoveryService.clearResults(); } catch (_) {}
+      // NOTE: We do NOT stop discovery or clear results here.
+      // The user should keep seeing other available hosts after stopping.
       try { await _hostService.stopServer(); } catch (_) {}
       try { _fileTransferService.clearHostedFiles(); } catch (_) {}
     }
 
-    discoveredHosts.clear();
-    isHosting       = false;
+    isHosting = false;
     connectionStatus = '';
-    isBusy          = false;
+    isBusy = false;
     notifyListeners();
   }
 
@@ -218,30 +206,20 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  // ── Discovery ──────────────────────────────────────────────────────────────
-
-  /// Re-ensures the listener is running. Shows a brief spinner in the UI.
-  /// Because the listener is persistent, this is mainly useful after an
-  /// unusual error or network change.
+  /// Manual refresh — mostly for UI feedback. Discovery already runs in background.
   Future<void> refreshDiscovery() async {
     if (kIsWeb || isScanning) return;
     isScanning = true;
     notifyListeners();
 
-    try {
-      // Restart listener if it somehow died.
-      await _discoveryService.startDiscovery();
-    } catch (e) {
-      print('[AppState] refreshDiscovery error: $e');
-    }
+    await _discoveryService.startDiscovery();
+    _discoveryService.sendImmediateQuery();
 
-    // Brief pause so the user sees the spinner, then clear it.
-    await Future.delayed(const Duration(milliseconds: 600));
+    // Brief spinner for UX
+    await Future.delayed(const Duration(milliseconds: 800));
     isScanning = false;
     notifyListeners();
   }
-
-  // ── Connecting ─────────────────────────────────────────────────────────────
 
   Future<void> connectTo(String ip, int port) async {
     if (isBusy) return;
@@ -270,13 +248,13 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> disconnectFromHost() async {
-    if (!kIsWeb) _clientService.disconnect();
+    if (!kIsWeb) {
+      _clientService.disconnect();
+    }
     isConnectedToHost = false;
-    connectionStatus  = '';
+    connectionStatus = '';
     notifyListeners();
   }
-
-  // ── Sharing ────────────────────────────────────────────────────────────────
 
   Future<void> shareText(String text) async {
     if (text.isEmpty) return;
@@ -347,8 +325,6 @@ class AppState extends ChangeNotifier {
       _setStatus('File downloaded: ${downloadedFile.path}');
     }
   }
-
-  // ── Lifecycle ──────────────────────────────────────────────────────────────
 
   @override
   void dispose() {
