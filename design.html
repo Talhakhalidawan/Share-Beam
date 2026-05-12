@@ -2,620 +2,517 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ShareBeam - Minimal Redesign</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Sharebeam Settings Prototype</title>
     <style>
-        /* --- Modern Minimalist Variables --- */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
+
         :root {
-            --bg-body: #e5e5e5;
-            --surface: #ffffff;
-            --surface-hover: #f9fafb;
+            --bg-color: #f2f2f7;
+            --card-bg: #ffffff;
             --text-main: #000000;
-            --text-muted: #888888;
-            --border: #eaeaea;
-            --accent: #000000; /* Stark black for Nothing/Framer vibe */
-            --accent-light: #f5f5f5;
-            --success: #000000; 
-            --danger: #ff4747;
-            --radius-lg: 16px;
-            --radius-md: 12px;
-            --radius-sm: 8px;
-            --font-stack: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            --text-secondary: #8e8e93;
+            --accent-blue: #007aff;
+            --accent-red: #ff3b30;
+            --border-color: #e5e5ea;
+            --modal-overlay: rgba(0, 0, 0, 0.4);
         }
 
         * {
             box-sizing: border-box;
             margin: 0;
             padding: 0;
-            font-family: var(--font-stack);
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
             -webkit-tap-highlight-color: transparent;
         }
 
         body {
-            background-color: var(--bg-body);
+            background-color: #e0e0e0; /* Darker bg for the browser window */
             display: flex;
             justify-content: center;
             align-items: center;
-            height: 100vh;
-            overflow: hidden;
-            color: var(--text-main);
+            min-height: 100vh;
         }
 
-        /* --- App Container --- */
+        /* Mobile Frame */
         #app {
             width: 100%;
             max-width: 400px;
-            height: 100%;
+            height: 100vh;
             max-height: 850px;
-            background-color: var(--surface);
+            background-color: var(--bg-color);
             position: relative;
             overflow: hidden;
-            box-shadow: 0 24px 48px rgba(0,0,0,0.08);
-        }
-
-        /* --- Screen Architecture --- */
-        .screen {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
             display: flex;
             flex-direction: column;
-            background-color: var(--surface);
-            transform: translateX(100%);
-            transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.4s ease;
-            z-index: 1;
-            opacity: 0;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.15);
         }
 
-        .screen.active {
-            transform: translateX(0);
-            z-index: 2;
-            opacity: 1;
+        @media (min-width: 401px) {
+            #app {
+                border-radius: 40px;
+                height: 850px;
+                border: 8px solid #333;
+            }
         }
 
-        .screen.previous {
-            transform: translateX(-15%);
-            opacity: 0.4;
-        }
-
-        /* --- Typography & Headers --- */
-        .header {
+        /* Header */
+        header {
             display: flex;
-            align-items: center;
             justify-content: space-between;
-            padding: 24px 24px 16px;
-            background: var(--surface);
-            z-index: 10;
-        }
-        
-        .header h1 {
-            font-size: 18px;
-            font-weight: 600;
-            letter-spacing: -0.5px;
+            align-items: center;
+            padding: 20px;
+            margin-top: 10px;
         }
 
-        .icon-btn {
-            background: none;
-            border: none;
-            cursor: pointer;
-            width: 40px;
-            height: 40px;
+        .header-left {
             display: flex;
             align-items: center;
-            justify-content: center;
-            border-radius: 50%;
-            transition: background 0.2s;
+            gap: 8px;
+            font-size: 22px;
+            font-weight: 600;
             color: var(--text-main);
-            margin: -8px;
-        }
-
-        .icon-btn:hover {
-            background: var(--surface-hover);
-        }
-
-        .content {
-            flex: 1;
-            overflow-y: auto;
-            padding: 0 24px 24px;
-        }
-        
-        .content::-webkit-scrollbar { display: none; }
-
-        /* --- Home Screen UI --- */
-        .drop-zone {
-            border: 1px dashed var(--border);
-            border-radius: var(--radius-lg);
-            padding: 40px 20px;
-            text-align: center;
-            background-color: var(--surface);
-            transition: background 0.2s, border-color 0.2s;
             cursor: pointer;
         }
 
-        .drop-zone:hover {
-            background-color: var(--surface-hover);
-            border-color: var(--text-muted);
-        }
-
-        .drop-zone h3 {
+        .header-right {
             font-size: 16px;
             font-weight: 500;
-            margin-top: 16px;
-            margin-bottom: 4px;
-        }
-
-        .drop-zone p {
-            font-size: 13px;
-            color: var(--text-muted);
-        }
-
-        .section-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: flex-end;
-            margin: 32px 0 16px 0;
-        }
-
-        .section-header h2 {
-            font-size: 14px;
-            font-weight: 600;
-            color: var(--text-muted);
-            text-transform: uppercase;
-            letter-spacing: 1px;
-        }
-
-        .section-header .action {
-            font-size: 13px;
-            color: var(--text-main);
             cursor: pointer;
-            font-weight: 500;
+            transition: color 0.2s ease;
         }
 
-        /* Minimal File List */
+        .text-blue { color: var(--accent-blue); }
+        .text-red { color: var(--accent-red); }
+
+        /* Main Content Area */
+        main {
+            flex: 1;
+            padding: 0 20px;
+            overflow-y: auto;
+        }
+
+        /* Lists and Cards */
+        .card {
+            background-color: var(--card-bg);
+            border-radius: 12px;
+            overflow: hidden;
+            margin-bottom: 24px;
+        }
+
         .list-item {
             display: flex;
+            justify-content: space-between;
             align-items: center;
-            padding: 16px 0;
-            border-bottom: 1px solid var(--border);
+            padding: 16px;
+            font-size: 16px;
+            border-bottom: 1px solid var(--border-color);
+            cursor: pointer;
+            transition: background-color 0.2s;
         }
+        .list-item:active { background-color: #f9f9f9; }
+        .list-item:last-child { border-bottom: none; }
 
-        .list-item:last-child {
-            border-bottom: none;
-        }
+        .item-label { font-weight: 500; color: var(--text-main); }
+        .item-value { color: var(--text-secondary); display: flex; align-items: center; gap: 4px;}
 
-        .item-icon {
-            width: 44px;
-            height: 44px;
-            border-radius: var(--radius-md);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin-right: 16px;
-            flex-shrink: 0;
-            background: var(--accent-light);
-            color: var(--text-main);
-        }
-
-        .item-details {
-            flex: 1;
-            min-width: 0;
-        }
-
-        .item-title {
-            font-size: 15px;
-            font-weight: 500;
-            margin-bottom: 4px;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-        }
-
-        text {
-            color: var(--text-muted);
-        }
-
-        .item-subtitle {
+        .section-header {
             font-size: 13px;
-            color: var(--text-muted);
+            text-transform: uppercase;
+            color: var(--text-secondary);
+            margin-bottom: 8px;
+            margin-left: 4px;
+            font-weight: 500;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .refresh-btn {
+            background: none;
+            border: none;
+            color: var(--text-secondary);
+            cursor: pointer;
+            padding: 4px;
+        }
+
+        /* Icons */
+        svg {
+            fill: none;
+            stroke: currentColor;
+            stroke-width: 2;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+        }
+        .icon-chevron { width: 24px; height: 24px; stroke: var(--accent-blue); }
+        .icon-small { width: 16px; height: 16px; stroke: var(--text-secondary); }
+        .icon-wifi { width: 20px; height: 20px; stroke: var(--text-main); }
+        .icon-user { width: 20px; height: 20px; stroke: var(--text-main); }
+        
+        .address-box {
             display: flex;
             align-items: center;
-            gap: 6px;
+            gap: 8px;
         }
 
-        .item-right {
-            text-align: right;
-            color: var(--text-muted);
-        }
-
-        /* Bottom Chat/Input */
-        .chat-input-container {
-            padding: 16px 24px 32px;
-            background: var(--surface);
+        /* Modals */
+        .modal-overlay {
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background-color: var(--modal-overlay);
             display: flex;
+            justify-content: center;
             align-items: center;
-            border-top: 1px solid var(--border);
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+            z-index: 100;
+        }
+        
+        .modal-overlay.active {
+            opacity: 1;
+            pointer-events: all;
         }
 
-        .chat-input {
-            flex: 1;
-            height: 48px;
-            border: 1px solid var(--border);
-            background: var(--surface-hover);
-            border-radius: 24px;
-            padding: 0 20px;
+        .modal-content {
+            background-color: var(--card-bg);
+            width: 85%;
+            border-radius: 20px;
+            padding: 24px;
+            text-align: center;
+            transform: translateY(20px);
+            transition: transform 0.3s ease;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+        }
+
+        .modal-overlay.active .modal-content {
+            transform: translateY(0);
+        }
+
+        .modal-title {
+            color: var(--accent-blue);
+            font-size: 20px;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+
+        .modal-subtitle {
+            color: var(--text-secondary);
             font-size: 14px;
+            margin-bottom: 20px;
+            line-height: 1.4;
+        }
+
+        .modal-input {
+            width: 100%;
+            padding: 14px;
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            font-size: 15px;
+            margin-bottom: 16px;
             outline: none;
             transition: border-color 0.2s;
         }
+        .modal-input:focus { border-color: var(--accent-blue); }
 
-        .chat-input:focus {
-            border-color: var(--text-main);
-        }
-
-        .chat-btn {
-            width: 48px;
-            height: 48px;
-            border-radius: 50%;
-            background: var(--accent);
-            color: white;
-            border: none;
-            margin-left: 12px;
+        .modal-checkbox-group {
             display: flex;
             align-items: center;
-            justify-content: center;
-            cursor: pointer;
-        }
-
-        /* --- Settings Screen --- */
-        /* Segmented Control */
-        .segmented-control {
-            display: flex;
-            background: var(--surface-hover);
-            border-radius: var(--radius-sm);
-            padding: 4px;
+            gap: 8px;
             margin-bottom: 24px;
-            border: 1px solid var(--border);
+            font-size: 14px;
+            color: var(--text-secondary);
+            text-align: left;
         }
 
-        .seg-btn {
-            flex: 1;
-            padding: 10px 0;
-            text-align: center;
-            font-size: 13px;
-            font-weight: 500;
-            color: var(--text-muted);
-            background: transparent;
+        .modal-btn {
+            width: 100%;
+            padding: 14px;
+            background-color: var(--accent-blue);
+            color: white;
             border: none;
-            border-radius: 6px;
+            border-radius: 12px;
+            font-size: 16px;
+            font-weight: 600;
             cursor: pointer;
-            transition: all 0.2s ease;
+            transition: opacity 0.2s;
+        }
+        .modal-btn:active { opacity: 0.8; }
+
+        /* Toasts */
+        .toast-container {
+            position: absolute;
+            bottom: 30px;
+            left: 0;
+            right: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 10px;
+            pointer-events: none;
+            z-index: 200;
         }
 
-        .seg-btn.active {
-            background: var(--surface);
-            color: var(--text-main);
-            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+        .toast {
+            background-color: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 12px 24px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: 500;
+            transform: translateY(20px);
+            opacity: 0;
+            transition: all 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
         }
 
-        /* Tab Views */
-        .tab-content {
-            display: none;
-            animation: fadeIn 0.3s ease;
+        .toast.show {
+            transform: translateY(0);
+            opacity: 1;
         }
-        .tab-content.active {
-            display: block;
-        }
+
+        /* View States */
+        .view-section { display: none; animation: fadeIn 0.3s ease; }
+        .view-section.active { display: block; }
 
         @keyframes fadeIn {
             from { opacity: 0; transform: translateY(5px); }
             to { opacity: 1; transform: translateY(0); }
         }
-
-        /* Cards & Blocks */
-        .minimal-card {
-            border: 1px solid var(--border);
-            border-radius: var(--radius-lg);
-            padding: 10px;
-            margin-bottom: 24px;
-            background: var(--surface-hover);
-            display: flex;
-            justify-content: space-between;
-        }
-
-        .ip-display {
-            font-size: 16px;
-            letter-spacing: -0.5px;
-        }
-
-        .ip-label {
-            font-size: 13px;
-            color: var(--text-muted);
-        }
-
-        /* Forms */
-        .input-group {
-            display: flex;
-            gap: 12px;
-            margin-bottom: 16px;
-        }
-
-        .input-group input {
-            flex: 1;
-            height: 48px;
-            border: 1px solid var(--border);
-            border-radius: var(--radius-sm);
-            padding: 0 16px;
-            font-size: 14px;
-            outline: none;
-        }
-
-        .input-group input:focus {
-            border-color: var(--accent);
-        }
-
-        .btn-primary {
-            height: 48px;
-            padding: 0 24px;
-            background: var(--accent);
-            color: white;
-            border: none;
-            border-radius: var(--radius-sm);
-            font-weight: 500;
-            cursor: pointer;
-        }
-
-        .btn-outline {
-            width: 100%;
-            height: 48px;
-            background: transparent;
-            color: var(--text-main);
-            border: 1px solid var(--border);
-            border-radius: var(--radius-sm);
-            font-weight: 500;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            cursor: pointer;
-            transition: background 0.2s;
-        }
-
-        .btn-outline:hover {
-            background: var(--surface-hover);
-        }
-
-        /* Setting Rows */
-        .settings-list { margin-top: 16px; }
-        .setting-row {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 16px 0;
-            border-bottom: 1px solid var(--border);
-        }
-
-        .setting-info h4 { font-size: 15px; font-weight: 500; }
-        .setting-info p { font-size: 13px; color: var(--text-muted); margin-top: 4px; }
-        .setting-action { font-size: 14px; color: var(--text-muted); display: flex; align-items: center;}
-
-        /* Modern Toggle */
-        .toggle {
-            width: 40px;
-            height: 24px;
-            background: var(--border);
-            border-radius: 12px;
-            position: relative;
-            cursor: pointer;
-            transition: background 0.3s;
-        }
-        .toggle::after {
-            content: '';
-            position: absolute;
-            top: 2px;
-            left: 2px;
-            width: 20px;
-            height: 20px;
-            background: white;
-            border-radius: 50%;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            transition: left 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-        }
-        .toggle.on { background: var(--text-main); }
-        .toggle.on::after { left: 18px; }
-
-        /* Connected Devices */
-        .device-item {
-            display: flex;
-            align-items: center;
-            padding: 12px 0;
-        }
-        .device-indicator {
-            width: 8px;
-            height: 8px;
-            background: var(--success);
-            border-radius: 50%;
-            margin-right: 12px;
-        }
-        .device-name { font-size: 14px; font-weight: 500; flex: 1; }
-        .device-meta { font-size: 12px; color: var(--text-muted); }
-
     </style>
 </head>
 <body>
 
-    <div id="app">
-        
-        <div id="screen-home" class="screen active">
-            <div class="header">
-                <h1>ShareBeam</h1>
-                <button class="icon-btn" onclick="navigateTo('screen-settings')" aria-label="Settings">
-                    <svg width="22" height="22" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
-                        <circle cx="12" cy="12" r="3"></circle>
-                        <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"></path>
-                    </svg>
-                </button>
-            </div>
+<div id="app">
+    <header>
+        <div class="header-left">
+            <svg class="icon-chevron" viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg>
+            Settings
+        </div>
+        <div id="header-action" class="header-right text-blue" onclick="handleHeaderAction()">
+            Host Server
+        </div>
+    </header>
 
-            <div class="content">
-
-                <div class="section-header">
-                    <h2>Recent Transfers</h2>
-                    <span class="action">.</span>
-                </div>
-
-                <div class="history-list">
-                    <div class="list-item">
-                        <div class="item-details">
-                            <div class="text">Here are the notes from today's standup reviewed the blockers and synced on timeline.</div>
-                            <div class="item-subtitle">Pixel 7 &bull; 9:41 AM</div>
-                        </div>
-                        <div class="item-right">
-                            <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><rect x="9" y="9" width="13" height="13" rx="2"></rect><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"></path></svg>
-                        </div>
-                    </div>
-
-                    <div class="list-item">
-                        <div class="item-icon">
-                            <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><path d="M21 15l-5-5L5 21" stroke-linecap="round" stroke-linejoin="round"></path></svg>
-                        </div>
-                        <div class="item-details">
-                            <div class="item-title">IMG_20250520.jpg</div>
-                            <div class="item-subtitle">MacBook Pro &bull; 1.2 MB</div>
-                        </div>
-                        <div class="item-right">
-                             <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5" style="cursor:pointer;"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" stroke-linecap="round" stroke-linejoin="round"></path></svg>
-                        </div>
-                    </div>
-
-                    <div class="list-item">
-                        <div class="item-icon">
-                            <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14v-4z"></path><rect x="3" y="6" width="12" height="12" rx="2"></rect></svg>
-                        </div>
-                        <div class="item-details">
-                            <div class="item-title">Project Demo.mp4</div>
-                            <div class="item-subtitle">Pixel 7 &bull; 45.6 MB</div>
-                        </div>
-                        <div class="item-right">
-                            <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5" style="cursor:pointer;"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" stroke-linecap="round" stroke-linejoin="round"></path></svg>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <div class="chat-input-container">
-                <input type="text" class="chat-input" placeholder="Type text to share...">
-                <button class="chat-btn">
-                    <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7" stroke-linecap="round" stroke-linejoin="round"></path></svg>
-                </button>
+    <main>
+        <div class="card">
+            <div class="list-item">
+                <span class="item-label">Name</span>
+                <span class="item-value">Iphone 12 Pro <svg class="icon-small" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg></span>
             </div>
         </div>
 
-
-        <div id="screen-settings" class="screen">
-            <div class="header">
-                <button class="icon-btn" onclick="navigateTo('screen-home')" aria-label="Back">
-                    <svg width="22" height="22" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path d="M15 19l-7-7 7-7" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+        <div id="view-idle" class="view-section active">
+            <div class="section-header">
+                AVAILABLE HOSTS
+                <button class="refresh-btn" onclick="showToast('Refreshing hosts...')">
+                    <svg class="icon-small" viewBox="0 0 24 24"><path d="M20 11A8.1 8.1 0 0 0 4.5 9M4 22L4 11h11M4 13a8.1 8.1 0 0 0 15.5 2M20 2v11H9"/></svg>
                 </button>
-                <h1>Connection</h1>
-                <div style="width: 40px;"></div> </div>
-
-            <div class="content">
-                
-                <div class="segmented-control">
-                    <button class="seg-btn active" onclick="switchTab('host')">Host Server</button>
-                    <button class="seg-btn" onclick="switchTab('join')">Join Server</button>
+            </div>
+            <div class="card">
+                <div class="list-item" onclick="openJoinModal()">
+                    <span class="item-label">Join manually</span>
+                    <span class="item-value">Enter address <svg class="icon-small" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg></span>
                 </div>
-
-                <div id="tab-host" class="tab-content active">
-                    <div class="minimal-card">
-                        <div class="ip-display">192.168.1.42</div>
-                        <div class="ip-label">copy</div>
-                    </div>
-
-                    <div class="section-header">
-                        <h2>Connected Devices (2)</h2>
-                    </div>
-                    
-                    <div class="device-list">
-                        <div class="device-item">
-                            <div class="device-indicator"></div>
-                            <div class="device-name">Pixel 7</div>
-                            <div class="device-meta">192.168.1.101</div>
-                        </div>
-                        <div class="device-item">
-                            <div class="device-indicator"></div>
-                            <div class="device-name">Linux Laptop</div>
-                            <div class="device-meta">192.168.1.102</div>
-                        </div>
-                    </div>
+                <div class="list-item" onclick="connectToHost('Linux Web')">
+                    <span class="item-label">Linux Web</span>
+                    <svg class="icon-wifi" viewBox="0 0 24 24"><path d="M5 12.55a11 11 0 0114.08 0M1.42 9a16 16 0 0121.16 0M8.53 16.11a6 6 0 016.95 0M12 20h.01"/></svg>
                 </div>
-
-                <div id="tab-join" class="tab-content">
-                        <div class="input-group">
-                            <input type="text" placeholder="Enter Host IP">
-                            <button class="btn-primary">Join</button>
-                        </div>
-
-                    <div style="text-align: center; padding: 32px 0; color: var(--text-muted);">
-                        <svg width="32" height="32" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1" style="margin-bottom:8px; opacity:0.5;"><path d="M12 22C6.477 22 2 17.523 2 12S6.477 2 12 2s10 4.477 10 10" stroke-linecap="round"></path><circle cx="12" cy="12" r="3"></circle></svg>
-                        <p style="font-size:14px;">Searching for nearby hosts...</p>
-                    </div>
+                <div class="list-item" onclick="connectToHost('Macbook Pro')">
+                    <span class="item-label">Macbook Pro</span>
+                    <svg class="icon-wifi" viewBox="0 0 24 24"><path d="M5 12.55a11 11 0 0114.08 0M1.42 9a16 16 0 0121.16 0M8.53 16.11a6 6 0 016.95 0M12 20h.01"/></svg>
                 </div>
-
-                <div class="section-header" style="margin-top: 32px;">
-                    <h2>Preferences</h2>
+                <div class="list-item" onclick="connectToHost('Mobile')">
+                    <span class="item-label">Mobile</span>
+                    <svg class="icon-wifi" viewBox="0 0 24 24"><path d="M5 12.55a11 11 0 0114.08 0M1.42 9a16 16 0 0121.16 0M8.53 16.11a6 6 0 016.95 0M12 20h.01"/></svg>
                 </div>
-                <div class="settings-list">
-                    <div class="setting-row">
-                        <div class="setting-info">
-                            <h4>Device Name</h4>
-                            <p>Identifies you on the network</p>
-                        </div>
-                        <div class="setting-action">Windows PC</div>
-                    </div>
-                    
-                </div>
-
             </div>
         </div>
-        
+
+        <div id="view-connected" class="view-section">
+            <div class="section-header">Participants</div>
+            <div class="card">
+                <div class="list-item">
+                    <span class="item-label">Macbook Pro</span>
+                    <svg class="icon-wifi" viewBox="0 0 24 24"><path d="M5 12.55a11 11 0 0114.08 0M1.42 9a16 16 0 0121.16 0M8.53 16.11a6 6 0 016.95 0M12 20h.01"/></svg>
+                </div>
+                <div class="list-item">
+                    <span class="item-label">Mobile</span>
+                    <svg class="icon-wifi" viewBox="0 0 24 24"><path d="M5 12.55a11 11 0 0114.08 0M1.42 9a16 16 0 0121.16 0M8.53 16.11a6 6 0 016.95 0M12 20h.01"/></svg>
+                </div>
+            </div>
+        </div>
+
+        <div id="view-hosting" class="view-section">
+            <div class="card">
+                <div class="list-item" onclick="copyAddress()">
+                    <span class="item-label">Address</span>
+                    <span class="item-value address-box">
+                        <span id="hosted-address">172.17.0.1:9876</span> 
+                        <svg class="icon-small" style="cursor:pointer;" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                    </span>
+                </div>
+            </div>
+
+            <div class="section-header">Connected Devices</div>
+            <div class="card">
+                <div class="list-item">
+                    <span class="item-label">Linux Web</span>
+                    <svg class="icon-user" viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+                </div>
+                <div class="list-item">
+                    <span class="item-label">Macbook Pro</span>
+                    <svg class="icon-user" viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <div id="modal-join" class="modal-overlay" onclick="closeModal(event, 'modal-join')">
+        <div class="modal-content" onclick="event.stopPropagation()">
+            <div class="modal-title">Enter Host Address</div>
+            <div class="modal-subtitle">Enter the host address along with port to join</div>
+            <input type="text" class="modal-input" id="join-input" placeholder="Enter Host (eg. 123.11.0.1:8088)">
+            <div class="modal-checkbox-group">
+                <input type="checkbox" id="join-auto">
+                <label for="join-auto">Connect automatically</label>
+            </div>
+            <button class="modal-btn" onclick="submitJoin()">Join Host</button>
+        </div>
     </div>
 
-    <script>
-        // Screen Navigation
-        function navigateTo(targetScreenId) {
-            const screens = document.querySelectorAll('.screen');
-            const targetScreen = document.getElementById(targetScreenId);
-            
-            screens.forEach(screen => {
-                if (screen === targetScreen) {
-                    screen.classList.add('active');
-                    screen.classList.remove('previous');
-                } else if (screen.classList.contains('active')) {
-                    screen.classList.remove('active');
-                    screen.classList.add('previous');
-                } else {
-                    screen.classList.remove('active');
-                    screen.classList.remove('previous');
-                }
-            });
-        }
+    <div id="modal-host" class="modal-overlay" onclick="closeModal(event, 'modal-host')">
+        <div class="modal-content" onclick="event.stopPropagation()">
+            <div class="modal-title">Start Hosting</div>
+            <div class="modal-subtitle">Enter a unique server port to start server</div>
+            <input type="number" class="modal-input" id="host-input" placeholder="Enter Port (eg. 5500)">
+            <div class="modal-checkbox-group">
+                <input type="checkbox" id="host-default">
+                <label for="host-default">Set as default</label>
+            </div>
+            <button class="modal-btn" onclick="submitHost()">Start Server</button>
+        </div>
+    </div>
 
-        // Segmented Control (Host/Join Tab Logic)
-        function switchTab(tabId) {
-            // Update Buttons
-            document.querySelectorAll('.seg-btn').forEach(btn => {
-                btn.classList.remove('active');
-            });
-            event.target.classList.add('active');
+    <div class="toast-container" id="toast-container"></div>
+</div>
 
-            // Update Content
-            document.querySelectorAll('.tab-content').forEach(content => {
-                content.classList.remove('active');
-            });
-            document.getElementById('tab-' + tabId).classList.add('active');
+<script>
+    // State Variables
+    let currentState = 'IDLE'; // IDLE, CONNECTED, HOSTING
+
+    // DOM Elements
+    const headerActionBtn = document.getElementById('header-action');
+    const viewIdle = document.getElementById('view-idle');
+    const viewConnected = document.getElementById('view-connected');
+    const viewHosting = document.getElementById('view-hosting');
+    
+    // Switch UI Views
+    function switchView(state) {
+        currentState = state;
+        
+        // Reset views
+        viewIdle.classList.remove('active');
+        viewConnected.classList.remove('active');
+        viewHosting.classList.remove('active');
+        
+        if (state === 'IDLE') {
+            headerActionBtn.textContent = 'Host Server';
+            headerActionBtn.className = 'header-right text-blue';
+            viewIdle.classList.add('active');
+        } else if (state === 'CONNECTED') {
+            headerActionBtn.textContent = 'Disconnect';
+            headerActionBtn.className = 'header-right text-red';
+            viewConnected.classList.add('active');
+        } else if (state === 'HOSTING') {
+            headerActionBtn.textContent = 'Stop Hosting';
+            headerActionBtn.className = 'header-right text-red';
+            viewHosting.classList.add('active');
         }
-    </script>
+    }
+
+    // Header Button Logic
+    function handleHeaderAction() {
+        if (currentState === 'IDLE') {
+            openHostModal();
+        } else if (currentState === 'CONNECTED') {
+            switchView('IDLE');
+            showToast('Disconnected from host');
+        } else if (currentState === 'HOSTING') {
+            switchView('IDLE');
+            showToast('Server stopped successfully');
+        }
+    }
+
+    // Modal Logic
+    function openJoinModal() { document.getElementById('modal-join').classList.add('active'); }
+    function openHostModal() { document.getElementById('modal-host').classList.add('active'); }
+    
+    function closeModal(event, modalId) {
+        document.getElementById(modalId).classList.remove('active');
+    }
+
+    function closeAllModals() {
+        document.getElementById('modal-join').classList.remove('active');
+        document.getElementById('modal-host').classList.remove('active');
+    }
+
+    // Actions
+    function connectToHost(name) {
+        switchView('CONNECTED');
+        showToast(`Connected to ${name}`);
+    }
+
+    function submitJoin() {
+        const address = document.getElementById('join-input').value;
+        if (!address) {
+            showToast('Please enter an address');
+            return;
+        }
+        closeAllModals();
+        switchView('CONNECTED');
+        showToast(`Connected to ${address}`);
+        document.getElementById('join-input').value = ''; // clear
+    }
+
+    function submitHost() {
+        const port = document.getElementById('host-input').value || '9876';
+        document.getElementById('hosted-address').innerText = `172.17.0.1:${port}`;
+        closeAllModals();
+        switchView('HOSTING');
+        showToast(`Server started on port ${port}`);
+        document.getElementById('host-input').value = ''; // clear
+    }
+
+    function copyAddress() {
+        const address = document.getElementById('hosted-address').innerText;
+        navigator.clipboard.writeText(address).then(() => {
+            showToast('Address copied to clipboard');
+        }).catch(() => {
+            showToast('Failed to copy');
+        });
+    }
+
+    // Toast Notification System
+    function showToast(message) {
+        const container = document.getElementById('toast-container');
+        const toast = document.createElement('div');
+        toast.className = 'toast';
+        toast.innerText = message;
+        
+        container.appendChild(toast);
+        
+        // Trigger reflow to ensure animation plays
+        void toast.offsetWidth;
+        toast.classList.add('show');
+        
+        setTimeout(() => {
+            toast.classList.remove('show');
+            setTimeout(() => {
+                container.removeChild(toast);
+            }, 300); // Wait for transition to finish
+        }, 2500);
+    }
+</script>
+
 </body>
 </html>

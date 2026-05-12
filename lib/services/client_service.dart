@@ -1,10 +1,15 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'package:web_socket_channel/web_socket_channel.dart';
+import 'package:web_socket_channel/io.dart';
 import '../core/models.dart';
 
+/// Robust WebSocket client with explicit TCP preflight, hard timeouts,
+/// and automatic retry. Uses IOWebSocketChannel for Linux desktop compatibility.
 class ClientService {
   WebSocketChannel? _channel;
+  bool _isConnecting = false;
 
   final _payloadController     = StreamController<SharePayload>.broadcast();
   final _clientListController  = StreamController<List<String>>.broadcast();
@@ -18,49 +23,93 @@ class ClientService {
 
   static const int      _maxAttempts    = 3;
   static const Duration _retryDelay     = Duration(seconds: 1);
-  static const Duration _connectTimeout = Duration(seconds: 6);
+  static const Duration _tcpTimeout     = Duration(seconds: 4);
+  static const Duration _wsTimeout      = Duration(seconds: 6);
 
-  /// Tries to connect up to [_maxAttempts] times.
-  ///
-  /// Why retries help with `EHOSTUNREACH`:
-  ///   The error usually means Linux's TCP SYN went out the wrong network
-  ///   interface (e.g. Ethernet instead of Wi-Fi) because the routing table
-  ///   prefers Ethernet for that subnet. After the first failure the kernel's
-  ///   route cache is updated and subsequent attempts often succeed. Android
-  ///   Wi-Fi power-save can also cause the first SYN to be dropped while the
-  ///   radio wakes up; a retry after 1 s reliably catches it.
+  /// Connects to host with TCP preflight + WebSocket upgrade.
   Future<bool> connect(String ip, int port) async {
+    if (_isConnecting) {
+      print('[ClientService] Connection already in progress, ignoring');
+      return false;
+    }
+
     disconnect();
+    _isConnecting = true;
 
     for (int attempt = 1; attempt <= _maxAttempts; attempt++) {
-      try {
-        final uri = Uri.parse('ws://$ip:$port/ws');
-        _channel = WebSocketChannel.connect(uri);
+      Socket? tcpSocket;
 
-        // ready completes once the WS handshake is done or throws on failure.
-        await _channel!.ready.timeout(_connectTimeout);
+      try {
+        // ── STEP 1: TCP preflight ──────────────────────────────────────
+        // Open raw TCP first to catch "No route to host" and routing issues
+        // BEFORE attempting the WS upgrade.
+        print('[ClientService] Attempt $attempt/$_maxAttempts — TCP preflight to $ip:$port');
+
+        tcpSocket = await Socket.connect(ip, port, timeout: _tcpTimeout);
+        print('[ClientService] TCP OK from ${tcpSocket.address.address}:${tcpSocket.port}');
+        await tcpSocket.close();
+        tcpSocket = null;
+
+        // Small delay to let kernel settle route cache
+        if (attempt > 1) {
+          await Future.delayed(const Duration(milliseconds: 300));
+        }
+
+        // ── STEP 2: WebSocket upgrade ──────────────────────────────────
+        final uri = Uri.parse('ws://$ip:$port/ws');
+
+        // IOWebSocketChannel uses dart:io WebSocket — more reliable on Linux
+        _channel = IOWebSocketChannel.connect(
+          uri,
+          pingInterval: const Duration(seconds: 20),
+          connectTimeout: _wsTimeout,
+        );
+
+        await _channel!.ready.timeout(_wsTimeout);
+
+        print('[ClientService] WebSocket connected to $ip:$port');
 
         _channel!.stream.listen(
           (message) {
             if (message is String) _handleMessage(message);
           },
           onDone:  _handleDisconnect,
-          onError: (_) => _handleDisconnect(),
+          onError: (e) {
+            print('[ClientService] Stream error: $e');
+            _handleDisconnect();
+          },
         );
 
+        _isConnecting = false;
         return true;
-      } catch (e) {
-        print('[ClientService] Attempt $attempt/$_maxAttempts failed: $e');
-        try { await _channel?.sink.close(); } catch (_) {}
-        _channel = null;
 
-        if (attempt < _maxAttempts) {
-          await Future.delayed(_retryDelay);
-        }
+      } on SocketException catch (e) {
+        print('[ClientService] TCP/WS failed attempt $attempt: $e');
+        tcpSocket?.destroy();
+        _cleanupChannel();
+        if (attempt < _maxAttempts) await Future.delayed(_retryDelay);
+
+      } on TimeoutException catch (e) {
+        print('[ClientService] Timeout attempt $attempt: $e');
+        tcpSocket?.destroy();
+        _cleanupChannel();
+        if (attempt < _maxAttempts) await Future.delayed(_retryDelay);
+
+      } catch (e) {
+        print('[ClientService] Unexpected error attempt $attempt: $e');
+        tcpSocket?.destroy();
+        _cleanupChannel();
+        if (attempt < _maxAttempts) await Future.delayed(_retryDelay);
       }
     }
 
+    _isConnecting = false;
     return false;
+  }
+
+  void _cleanupChannel() {
+    try { _channel?.sink.close(); } catch (_) {}
+    _channel = null;
   }
 
   void _handleMessage(String message) {
@@ -68,7 +117,6 @@ class ClientService {
       final data = jsonDecode(message);
       if (data is! Map<String, dynamic>) return;
 
-      // Host keep-alive ping — no action needed.
       if (data['type'] == 'ping') return;
 
       if (data['type'] == 'client_list') {
@@ -104,6 +152,7 @@ class ClientService {
   }
 
   void disconnect() {
+    _isConnecting = false;
     try { _channel?.sink.close(); } catch (_) {}
     _channel = null;
   }

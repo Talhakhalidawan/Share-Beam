@@ -5,16 +5,6 @@ import 'package:flutter/foundation.dart';
 import '../core/models.dart';
 import 'network_service.dart';
 
-/// LAN discovery — broadcast-primary, multicast-secondary, shared socket,
-/// query/response for instant pickup.
-///
-/// Key platform notes:
-///   • Android silently drops multicast without a MulticastLock (native code).
-///     Subnet broadcast (192.168.x.255) is used as the primary channel; it
-///     works on Android with no special permissions.
-///   • SO_REUSEPORT lets both host and client share port [discoveryPort] on
-///     the same machine. Older Android kernels may not support it; we fall back
-///     silently.
 class DiscoveryService {
   static const int    discoveryPort  = 9877;
   static const String multicastGroup = '224.0.0.123';
@@ -26,40 +16,33 @@ class DiscoveryService {
   static const Duration _announcePeriod = Duration(seconds: 2);
   static const Duration _deviceTtl      = Duration(seconds: 7);
 
-  // ── Socket ─────────────────────────────────────────────────────────────────
   RawDatagramSocket?  _socket;
   StreamSubscription? _socketSub;
   bool                _socketReady = false;
 
   String _broadcastAddr = '255.255.255.255';
 
-  /// Set by AppState so we never show our own device in the discovered list.
-  String _localIp = '';
-  void setLocalIp(String ip) => _localIp = ip;
-
-  // ── Host state ─────────────────────────────────────────────────────────────
   bool   _isHosting = false;
   String _hostName  = '';
   int    _hostPort  = 9876;
   Timer? _announceTimer;
 
-  // ── TTL ────────────────────────────────────────────────────────────────────
   final Map<String, DateTime> _lastSeen = {};
   Timer? _ttlTimer;
 
-  // ── Stream ─────────────────────────────────────────────────────────────────
   final _devicesController =
       StreamController<List<DiscoveredDevice>>.broadcast();
   Stream<List<DiscoveredDevice>> get devicesStream => _devicesController.stream;
 
   final List<DiscoveredDevice> _devices = [];
 
-  // ── Socket lifecycle ───────────────────────────────────────────────────────
+  // Self-filtering: filter by IP AND by name+port
+  String _localIp = '';
+  void setLocalIp(String ip) => _localIp = ip;
 
   Future<void> _ensureSocket() async {
     if (_socketReady) return;
 
-    // Derive subnet broadcast from local IP (assumes /24, correct for home/office Wi-Fi).
     try {
       final localIp = await NetworkService.getLocalIp();
       final parts   = localIp.split('.');
@@ -68,7 +51,6 @@ class DiscoveryService {
       }
     } catch (_) {}
 
-    // Try with SO_REUSEPORT first; older Android kernels may not support it.
     for (final reusePort in [true, false]) {
       try {
         _socket = await RawDatagramSocket.bind(
@@ -113,8 +95,6 @@ class DiscoveryService {
     print('[Discovery] Socket ready — broadcast=$_broadcastAddr port=$discoveryPort');
   }
 
-  // ── Send helpers ───────────────────────────────────────────────────────────
-
   void _sendTo(List<int> bytes, String ip, int port) {
     try { _socket?.send(bytes, InternetAddress(ip), port); } catch (_) {}
   }
@@ -131,8 +111,6 @@ class DiscoveryService {
     _sendTo(utf8.encode(jsonEncode(data)), ip, port);
   }
 
-  // ── HOST API ───────────────────────────────────────────────────────────────
-
   Future<void> startHost(String deviceName, int serverPort) async {
     if (_isHosting) return;
     _hostName = deviceName;
@@ -144,7 +122,6 @@ class DiscoveryService {
     void announce() =>
         _broadcast({'type': _kAnnounce, 'name': _hostName, 'port': _hostPort});
 
-    // Burst for fast initial pickup.
     for (int i = 0; i < 3; i++) {
       announce();
       if (i < 2) await Future.delayed(const Duration(milliseconds: 300));
@@ -168,8 +145,6 @@ class DiscoveryService {
     _isHosting = false;
     print('[Discovery] Stopped hosting');
   }
-
-  // ── DISCOVERY API ──────────────────────────────────────────────────────────
 
   Future<void> startDiscovery({
     Duration timeout = const Duration(seconds: 10),
@@ -203,8 +178,6 @@ class DiscoveryService {
     _socketReady = false;
   }
 
-  // ── Datagram handler ───────────────────────────────────────────────────────
-
   void _handleDatagram(Datagram dg) {
     try {
       final data = jsonDecode(utf8.decode(dg.data).trim());
@@ -218,8 +191,11 @@ class DiscoveryService {
         case _kAnnounce:
           final name = (data['name'] as String?) ?? 'Unknown';
           final port = (data['port'] as int?)    ?? 9876;
-          // Ignore our own announces.
+
+          // Filter self by IP OR by name+port
+          if (_localIp.isNotEmpty && senderIp == _localIp) return;
           if (_isHosting && port == _hostPort && name == _hostName) return;
+
           _upsert(DiscoveredDevice(name: name, ip: senderIp, port: port));
 
         case _kGoodbye:
@@ -238,12 +214,7 @@ class DiscoveryService {
     } catch (_) {}
   }
 
-  // ── Device list ────────────────────────────────────────────────────────────
-
   void _upsert(DiscoveredDevice device) {
-    // Bug #1: never add our own device to the discovered list.
-    if (_localIp.isNotEmpty && device.ip == _localIp) return;
-
     final key = '${device.ip}:${device.port}';
     _lastSeen[key] = DateTime.now();
 

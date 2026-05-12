@@ -12,12 +12,11 @@ import '../core/models.dart';
 
 class HostService {
   HttpServer? _server;
-  final List<WebSocketChannel>         _clients     = [];
-  final Map<WebSocketChannel, String>  _clientNames = {};
+  final List<WebSocketChannel>        _clients     = [];
+  final Map<WebSocketChannel, String> _clientNames = {};
   String? _hostName;
-
-  // Bug #10: periodic ping detects silently-dead connections quickly.
   Timer? _pingTimer;
+  bool _isShuttingDown = false;
 
   final _payloadController    = StreamController<SharePayload>.broadcast();
   final _clientListController = StreamController<List<String>>.broadcast();
@@ -30,17 +29,28 @@ class HostService {
   Future<void> startServer(int port, String hostName, Router router) async {
     await stopServer();
     _hostName = hostName;
+    _isShuttingDown = false;
 
+    // Register WS route BEFORE server starts
     router.get('/ws', webSocketHandler((WebSocketChannel channel, String? protocol) {
+      if (_isShuttingDown) {
+        try { channel.sink.close(); } catch (_) {}
+        return;
+      }
+
       _clients.add(channel);
       _statusController.add('Client connected. Total: ${_clients.length}');
 
       channel.stream.listen(
         (message) {
-          if (message is String) _handleMessage(message, channel);
+          if (message is String) {
+            // CRITICAL FIX: handle in microtask to prevent blocking event loop
+            Future.microtask(() => _handleMessage(message, channel));
+          }
         },
         onDone:  () => _removeClient(channel),
         onError: (_) => _removeClient(channel),
+        cancelOnError: true,
       );
     }));
 
@@ -48,9 +58,9 @@ class HostService {
     _server = await shelf_io.serve(handler, '0.0.0.0', port);
     print('[HostService] Server running on 0.0.0.0:$port');
 
-    // Ping every 20 s. Any client that doesn't respond (onError/onDone fires)
-    // gets removed, so the participants list stays accurate.
-    _pingTimer = Timer.periodic(const Duration(seconds: 20), (_) {
+    // Ping every 30s — keeps connections alive without flooding
+    _pingTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (_isShuttingDown) return;
       _broadcastAll(jsonEncode({'type': 'ping'}));
     });
   }
@@ -58,8 +68,6 @@ class HostService {
   void _handleMessage(String message, WebSocketChannel sender) {
     try {
       final data = jsonDecode(message) as Map<String, dynamic>;
-
-      // Ignore client-side pings (not currently sent, but defensive).
       if (data['type'] == 'ping') return;
 
       if (data['type'] == 'handshake') {
@@ -69,7 +77,6 @@ class HostService {
         return;
       }
 
-      // It's a SharePayload — receive locally and relay to all other clients.
       _payloadController.add(SharePayload.fromJson(data));
 
       for (final client in List<WebSocketChannel>.from(_clients)) {
@@ -121,6 +128,7 @@ class HostService {
   }
 
   Future<void> stopServer() async {
+    _isShuttingDown = true;
     _pingTimer?.cancel();
     _pingTimer = null;
 
@@ -135,13 +143,14 @@ class HostService {
       await _server!.close(force: true);
       _server = null;
     }
+
     _hostName = null;
+    _isShuttingDown = false;
+    print('[HostService] Server stopped');
   }
 
-  // Bug #2: dispose was fire-and-forget. Now it synchronously cancels the ping
-  // timer and closes the HTTP server with force:true (no graceful wait needed),
-  // then closes stream controllers. The WebSocket sinks are best-effort.
   void dispose() {
+    _isShuttingDown = true;
     _pingTimer?.cancel();
     _pingTimer = null;
 

@@ -3,7 +3,6 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/app_state.dart';
-import '../shared/theme.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({Key? key}) : super(key: key);
@@ -13,101 +12,379 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  int _tabIndex = 0;
-  final TextEditingController _ipController   = TextEditingController();
+  final TextEditingController _ipController = TextEditingController();
   final TextEditingController _portController = TextEditingController();
-  final TextEditingController _nameController = TextEditingController();
 
-  // Bug #5: inline validation error for the join field.
-  String? _ipError;
-
-  static final _ipv4Re =
-      RegExp(r'^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$');
+  static const Color _iosBg = Color(0xFFF2F2F7);
+  static const Color _iosCardBg = Colors.white;
+  static const Color _iosBlue = Color(0xFF007AFF);
+  static const Color _iosRed = Color(0xFFFF3B30);
+  static const Color _iosGray = Color(0xFF8E8E93);
+  static const Color _iosBorder = Color(0xFFE5E5EA);
+  static const Color _iosText = Colors.black;
 
   @override
   void initState() {
     super.initState();
     final appState = context.read<AppState>();
     _portController.text = appState.hostPort.toString();
-    _nameController.text = appState.deviceName;
   }
 
   @override
   void dispose() {
     _ipController.dispose();
     _portController.dispose();
-    _nameController.dispose();
     super.dispose();
   }
 
-  // ── Validation ─────────────────────────────────────────────────────────────
-
-  /// Parses "ip:port" or bare "ip", validates both, returns (ip, port) or null.
-  ({String ip, int port})? _parseAndValidate(String input, int fallbackPort) {
-    final trimmed = input.trim();
-    if (trimmed.isEmpty) {
-      setState(() => _ipError = 'Enter a host address');
-      return null;
-    }
-
-    String ipPart;
-    int    portPart;
-
-    if (trimmed.contains(':')) {
-      final idx = trimmed.lastIndexOf(':');
-      ipPart = trimmed.substring(0, idx);
-      final p = int.tryParse(trimmed.substring(idx + 1));
-      if (p == null || p <= 0 || p > 65535) {
-        setState(() => _ipError = 'Invalid port — must be 1–65535');
-        return null;
-      }
-      portPart = p;
-    } else {
-      ipPart   = trimmed;
-      portPart = fallbackPort;
-    }
-
-    if (!_ipv4Re.hasMatch(ipPart)) {
-      setState(() => _ipError = 'Enter a valid IP (e.g. 192.168.1.42)');
-      return null;
-    }
-
-    // Check each octet is 0–255.
-    final octets = ipPart.split('.').map(int.parse).toList();
-    if (octets.any((o) => o > 255)) {
-      setState(() => _ipError = 'Each IP octet must be 0–255');
-      return null;
-    }
-
-    setState(() => _ipError = null);
-    return (ip: ipPart, port: portPart);
-  }
-
-  void _connect(AppState appState) {
-    final parsed = _parseAndValidate(
-      _ipController.text,
-      appState.hostPort,
+  Widget _iosDialog({
+    required String title,
+    required String subtitle,
+    required List<Widget> children,
+  }) {
+    return Dialog(
+      backgroundColor: _iosCardBg,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 32),
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              title,
+              style: const TextStyle(
+                fontSize: 20, fontWeight: FontWeight.w600, color: _iosBlue,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              subtitle,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 14, color: _iosGray, height: 1.4,
+              ),
+            ),
+            const SizedBox(height: 20),
+            ...children,
+          ],
+        ),
+      ),
     );
-    if (parsed == null) return;
-    appState.connectTo(parsed.ip, parsed.port);
   }
 
-  // ── Build ──────────────────────────────────────────────────────────────────
+  void _showNameDialog(AppState appState) {
+    final controller = TextEditingController(text: appState.deviceName);
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (_) => _iosDialog(
+        title: 'Your Name',
+        subtitle: 'This is how others will see you on the network.',
+        children: [
+          TextField(
+            controller: controller,
+            autofocus: true,
+            textCapitalization: TextCapitalization.words,
+            decoration: InputDecoration(
+              hintText: 'e.g. Talha\'s Phone',
+              filled: true,
+              fillColor: _iosBg,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: const BorderSide(color: _iosBorder),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: const BorderSide(color: _iosBorder),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: const BorderSide(color: _iosBlue),
+              ),
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+            ),
+          ),
+          const SizedBox(height: 24),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _iosBlue,
+                foregroundColor: Colors.white,
+                elevation: 0,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              onPressed: () {
+                if (controller.text.trim().isNotEmpty) {
+                  appState.deviceName = controller.text.trim();
+                }
+                Navigator.of(context).pop();
+              },
+              child: const Text(
+                'Save',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showHostDialog(AppState appState) {
+    final controller =
+        TextEditingController(text: appState.hostPort.toString());
+    bool setDefault = false;
+
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (_) => StatefulBuilder(
+        builder: (context, setSt) {
+          return _iosDialog(
+            title: 'Start Hosting',
+            subtitle: 'Enter a unique server port to start server',
+            children: [
+              TextField(
+                controller: controller,
+                keyboardType: TextInputType.number,
+                decoration: InputDecoration(
+                  hintText: 'Enter Port (eg. 5500)',
+                  filled: true,
+                  fillColor: _iosBg,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: const BorderSide(color: _iosBorder),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: const BorderSide(color: _iosBorder),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: const BorderSide(color: _iosBlue),
+                  ),
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Checkbox(
+                    value: setDefault,
+                    activeColor: _iosBlue,
+                    side: const BorderSide(color: _iosGray),
+                    onChanged: (v) => setSt(() => setDefault = v ?? false),
+                  ),
+                  const Text(
+                    'Set as default',
+                    style: TextStyle(fontSize: 14, color: _iosGray),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _iosBlue,
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  onPressed: appState.isBusy
+                      ? null
+                      : () {
+                          final port = int.tryParse(controller.text);
+                          if (port != null) appState.setHostPort = port;
+                          Navigator.of(context).pop();
+                          appState.startHosting();
+                        },
+                  child: const Text(
+                    'Start Server',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  void _showJoinDialog(AppState appState) {
+    final controller = TextEditingController();
+    bool connectAuto = false;
+
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (_) => StatefulBuilder(
+        builder: (context, setSt) {
+          return _iosDialog(
+            title: 'Enter Host Address',
+            subtitle: 'Enter the host address along with port to join',
+            children: [
+              TextField(
+                controller: controller,
+                decoration: InputDecoration(
+                  hintText: 'Enter Host (eg. 192.168.1.42:9876)',
+                  filled: true,
+                  fillColor: _iosBg,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: const BorderSide(color: _iosBorder),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: const BorderSide(color: _iosBorder),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: const BorderSide(color: _iosBlue),
+                  ),
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Checkbox(
+                    value: connectAuto,
+                    activeColor: _iosBlue,
+                    side: const BorderSide(color: _iosGray),
+                    onChanged: (v) => setSt(() => connectAuto = v ?? false),
+                  ),
+                  const Text(
+                    'Connect automatically',
+                    style: TextStyle(fontSize: 14, color: _iosGray),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _iosBlue,
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  onPressed: appState.isBusy
+                      ? null
+                      : () {
+                          final input = controller.text.trim();
+                          Navigator.of(context).pop();
+                          if (input.isEmpty) return;
+
+                          String ip = input;
+                          int port = appState.hostPort;
+                          if (input.contains(':')) {
+                            final parts = input.split(':');
+                            ip = parts[0];
+                            final p = int.tryParse(parts[1]);
+                            if (p != null) port = p;
+                          }
+                          appState.connectTo(ip, port);
+                        },
+                  child: const Text(
+                    'Join Host',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     final appState = context.watch<AppState>();
 
+    final bool isHosting = appState.isHosting;
+    final bool isConnected = appState.isConnectedToHost;
+
+    final String headerActionText;
+    final Color headerActionColor;
+    final VoidCallback? headerAction;
+
+    if (isHosting) {
+      headerActionText = 'Stop Hosting';
+      headerActionColor = _iosRed;
+      headerAction = appState.isBusy ? null : () => appState.stopHosting();
+    } else if (isConnected) {
+      headerActionText = 'Disconnect';
+      headerActionColor = _iosRed;
+      headerAction = appState.isBusy ? null : () => appState.disconnectFromHost();
+    } else {
+      headerActionText = 'Host Server';
+      headerActionColor = _iosBlue;
+      headerAction = appState.isBusy ? null : () => _showHostDialog(appState);
+    }
+
     return Scaffold(
+      backgroundColor: _iosBg,
       appBar: AppBar(
-        title: const Text('Connection'),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () => Navigator.pop(context),
+        backgroundColor: _iosBg,
+        elevation: 0,
+        automaticallyImplyLeading: false,
+        centerTitle: false,
+        titleSpacing: 0,
+        title: Padding(
+          padding: const EdgeInsets.only(left: 8),
+          child: Row(
+            children: [
+              IconButton(
+                icon: const Icon(Icons.chevron_left,
+                    color: _iosBlue, size: 28),
+                onPressed: () => Navigator.pop(context),
+              ),
+              const Text(
+                'Settings',
+                style: TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w600,
+                  color: _iosText,
+                ),
+              ),
+            ],
+          ),
         ),
+        actions: [
+          TextButton(
+            onPressed: headerAction,
+            child: Text(
+              headerActionText,
+              style: TextStyle(
+                color: headerActionColor,
+                fontSize: 16,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+        ],
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.symmetric(horizontal: 20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -115,14 +392,55 @@ class _SettingsScreenState extends State<SettingsScreen> {
               _buildStatusBanner(appState),
               const SizedBox(height: 16),
             ],
-            _buildSegmentedControl(),
+            _buildNameCard(appState),
             const SizedBox(height: 24),
-            _buildDeviceNameField(appState),
-            const SizedBox(height: 24),
-            _tabIndex == 0
-                ? _buildHostTab(appState)
-                : _buildJoinTab(appState),
+            if (isHosting) ...[
+              _buildAddressCard(appState),
+              const SizedBox(height: 24),
+              _buildConnectedDevices(appState),
+            ] else if (isConnected) ...[
+              _buildParticipants(appState),
+            ] else ...[
+              _buildAvailableHosts(appState),
+            ],
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildNameCard(AppState appState) {
+    return _buildCard(
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(12),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: () => _showNameDialog(appState),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'Name',
+                  style: TextStyle(
+                    fontSize: 16, fontWeight: FontWeight.w500, color: _iosText,
+                  ),
+                ),
+                Row(
+                  children: [
+                    Text(
+                      appState.deviceName,
+                      style: const TextStyle(fontSize: 16, color: _iosGray),
+                    ),
+                    const SizedBox(width: 4),
+                    const Icon(Icons.chevron_right, color: _iosBlue, size: 20),
+                  ],
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );
@@ -165,369 +483,274 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  Widget _buildDeviceNameField(AppState appState) {
-    return TextField(
-      controller: _nameController,
-      decoration: const InputDecoration(
-        labelText: 'Your Device Name',
-        hintText: 'e.g. Talha\'s Phone',
-        border: OutlineInputBorder(
-            borderRadius: BorderRadius.all(Radius.circular(12))),
-        contentPadding:
-            EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      ),
-      onChanged: (name) => appState.deviceName = name,
-    );
-  }
-
-  Widget _buildSegmentedControl() {
-    return Container(
-      decoration: BoxDecoration(
-        color: AppTheme.surfaceHover,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: AppTheme.borderColor),
-      ),
-      padding: const EdgeInsets.all(4),
-      child: Row(
-        children: [
-          _segTab('Host Server', 0),
-          _segTab('Join Server', 1),
-        ],
-      ),
-    );
-  }
-
-  Widget _segTab(String label, int index) {
-    final active = _tabIndex == index;
-    return Expanded(
-      child: GestureDetector(
-        onTap: () => setState(() => _tabIndex = index),
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 10),
-          decoration: BoxDecoration(
-            color: active ? AppTheme.surfaceColor : Colors.transparent,
-            borderRadius: BorderRadius.circular(6),
-            boxShadow: active
-                ? [const BoxShadow(
-                    color: Colors.black12, blurRadius: 4,
-                    offset: Offset(0, 2))]
-                : [],
-          ),
-          alignment: Alignment.center,
-          child: Text(
-            label,
-            style: TextStyle(
-              fontWeight: FontWeight.w500,
-              fontSize: 13,
-              color: active ? AppTheme.textMain : AppTheme.textMuted,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  // ── Available Networks ─────────────────────────────────────────────────────
-
-  Widget _buildAvailableNetworks(AppState appState) {
+  Widget _buildAvailableHosts(AppState appState) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            const Text('AVAILABLE NETWORKS',
-                style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: AppTheme.textMuted,
-                    letterSpacing: 1)),
+            const Text(
+              'AVAILABLE HOSTS',
+              style: TextStyle(
+                fontSize: 13, fontWeight: FontWeight.w600,
+                color: _iosGray, letterSpacing: 1,
+              ),
+            ),
             appState.isScanning
                 ? const SizedBox(
-                    width: 20,
-                    height: 20,
+                    width: 18, height: 18,
                     child: CircularProgressIndicator(
-                        strokeWidth: 2, color: AppTheme.textMuted))
+                      strokeWidth: 2, color: _iosGray,
+                    ),
+                  )
                 : IconButton(
-                    icon: const Icon(Icons.refresh_rounded,
-                        size: 20, color: AppTheme.textMuted),
+                    constraints: const BoxConstraints(),
+                    padding: EdgeInsets.zero,
+                    icon: const Icon(Icons.refresh, size: 20, color: _iosGray),
                     onPressed: () => appState.refreshDiscovery(),
                   ),
           ],
         ),
-        const SizedBox(height: 12),
-        if (appState.discoveredHosts.isEmpty)
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 12),
-            child: Text('No hosts found. Tap refresh to scan.',
-                style: TextStyle(fontSize: 13, color: AppTheme.textMuted)),
-          )
-        else
-          ...appState.discoveredHosts.map(
-            (d) => Card(
-              margin: const EdgeInsets.only(bottom: 8),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12)),
-              child: ListTile(
-                title: Text(d.name,
-                    style: const TextStyle(fontWeight: FontWeight.w500)),
-                subtitle: Text('${d.ip}:${d.port}',
-                    style: const TextStyle(fontSize: 12)),
-                trailing:
-                    const Icon(Icons.wifi_tethering, size: 20),
-                onTap: () {
-                  setState(() {
-                    _tabIndex = 1;
-                    _ipController.text = '${d.ip}:${d.port}';
-                    _ipError = null;
-                  });
-                  appState.connectTo(d.ip, d.port);
-                },
-              ),
-            ),
-          ),
-      ],
-    );
-  }
-
-  // ── Host Tab ───────────────────────────────────────────────────────────────
-
-  Widget _buildHostTab(AppState appState) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Expanded(
-              child: TextField(
-                controller: _portController,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                  labelText: 'Host Port',
-                  hintText: '9876',
-                  border: OutlineInputBorder(
-                      borderRadius:
-                          BorderRadius.all(Radius.circular(12))),
-                  contentPadding:
-                      EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                ),
-                onChanged: (val) {
-                  final port = int.tryParse(val);
-                  if (port != null) appState.setHostPort = port;
-                },
-              ),
-            ),
-            const SizedBox(width: 16),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor:
-                    appState.isHosting ? Colors.red : AppTheme.accentColor,
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12)),
-                elevation: 0,
-                minimumSize: const Size(120, 52),
-              ),
-              onPressed: appState.isBusy
-                  ? null
-                  : () => appState.toggleHosting(!appState.isHosting),
-              child: appState.isBusy && !appState.isHosting
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(
-                          strokeWidth: 2, color: Colors.white))
-                  : Text(appState.isHosting ? 'Stop' : 'Start'),
-            ),
-          ],
-        ),
-        const SizedBox(height: 24),
-        if (appState.isHosting) ...[
-          const Text('HOSTING ADDRESS',
-              style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: AppTheme.textMuted,
-                  letterSpacing: 1)),
-          const SizedBox(height: 12),
-          GestureDetector(
-            onTap: () {
-              Clipboard.setData(ClipboardData(
-                  text:
-                      '${appState.localIp}:${appState.hostPort}'));
-              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                  content: Text('Address copied'),
-                  duration: Duration(seconds: 1)));
-            },
-            child: Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                border: Border.all(color: AppTheme.borderColor),
-                borderRadius: BorderRadius.circular(16),
-                color: AppTheme.surfaceHover,
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        '${appState.localIp}:${appState.hostPort}',
-                        style: const TextStyle(
-                            fontSize: 18,
-                            letterSpacing: -0.5,
-                            fontWeight: FontWeight.w600),
-                      ),
-                      const SizedBox(height: 4),
-                      const Text('Ready for connections',
-                          style: TextStyle(
-                              fontSize: 12,
-                              color: AppTheme.textMuted)),
-                    ],
-                  ),
-                  const Icon(Icons.copy_rounded,
-                      size: 20, color: AppTheme.textMuted),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 32),
-          _buildParticipantsList(appState),
-        ] else ...[
-          const SizedBox(height: 24),
-          _buildAvailableNetworks(appState),
-        ],
-      ],
-    );
-  }
-
-  // ── Join Tab ───────────────────────────────────────────────────────────────
-
-  Widget _buildJoinTab(AppState appState) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              child: TextField(
-                controller: _ipController,
-                enabled: !appState.isBusy,
-                style: const TextStyle(fontSize: 14),
-                decoration: InputDecoration(
-                  labelText: 'Host Address',
-                  hintText: '192.168.1.42:9876',
-                  // Bug #5: show validation error inline.
-                  errorText: _ipError,
-                  border: const OutlineInputBorder(
-                      borderRadius:
-                          BorderRadius.all(Radius.circular(12))),
-                  contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 16, vertical: 14),
-                ),
-                onChanged: (_) {
-                  if (_ipError != null) setState(() => _ipError = null);
-                },
-              ),
-            ),
-            const SizedBox(width: 16),
-            Padding(
-              // Align button with the text field when errorText appears.
-              padding: EdgeInsets.only(top: _ipError != null ? 0 : 0),
-              child: ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: appState.isConnectedToHost
-                      ? Colors.red
-                      : AppTheme.accentColor,
-                  foregroundColor: Colors.white,
-                  minimumSize: const Size(120, 52),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12)),
-                  elevation: 0,
-                ),
-                onPressed: appState.isBusy
-                    ? null
-                    : (appState.isConnectedToHost
-                        ? () => appState.disconnectFromHost()
-                        : () => _connect(appState)),
-                child: appState.isBusy && !appState.isConnectedToHost
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(
-                            strokeWidth: 2, color: Colors.white))
-                    : Text(appState.isConnectedToHost
-                        ? 'Disconnect'
-                        : 'Connect'),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 32),
-        if (appState.isConnectedToHost)
-          _buildParticipantsList(appState)
-        else ...[
-          const SizedBox(height: 24),
-          _buildAvailableNetworks(appState),
-        ],
-      ],
-    );
-  }
-
-  // ── Participants ───────────────────────────────────────────────────────────
-
-  Widget _buildParticipantsList(AppState appState) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text('PARTICIPANTS',
-            style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                color: AppTheme.textMuted,
-                letterSpacing: 1)),
-        const SizedBox(height: 16),
-        if (appState.participants.isEmpty)
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 16),
-            child: Text('No one connected yet',
-                style: TextStyle(
-                    color: AppTheme.textMuted, fontSize: 13)),
-          )
-        else
-          ...appState.participants.map(
-            (name) => Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: AppTheme.surfaceHover.withOpacity(0.5),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Row(
+        const SizedBox(height: 8),
+        _buildCard(
+          child: Column(
+            children: [
+              _listTile(
+                label: 'Join manually',
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Container(
-                        width: 8,
-                        height: 8,
-                        decoration: const BoxDecoration(
-                            color: Colors.green,
-                            shape: BoxShape.circle)),
-                    const SizedBox(width: 12),
-                    Expanded(
-                        child: Text(name,
-                            style: const TextStyle(
-                                fontWeight: FontWeight.w500,
-                                fontSize: 14))),
-                    const Icon(Icons.person,
-                        size: 16, color: AppTheme.textMuted),
+                    Text(
+                      'Enter address',
+                      style: TextStyle(fontSize: 16, color: _iosGray),
+                    ),
+                    const SizedBox(width: 4),
+                    const Icon(Icons.chevron_right, color: _iosBlue, size: 20),
                   ],
                 ),
+                onTap: () => _showJoinDialog(appState),
+                showDivider: appState.discoveredHosts.isNotEmpty,
               ),
+              ...appState.discoveredHosts.asMap().entries.map((e) {
+                final isLast = e.key == appState.discoveredHosts.length - 1;
+                return _listTile(
+                  label: e.value.name,
+                  trailing: const Icon(
+                    Icons.wifi_tethering, size: 20, color: _iosText,
+                  ),
+                  onTap: () => appState.connectTo(e.value.ip, e.value.port),
+                  showDivider: !isLast,
+                );
+              }).toList(),
+              if (appState.discoveredHosts.isEmpty && !appState.isScanning)
+                _listTile(
+                  label: 'No hosts found. Tap refresh to scan.',
+                  trailing: const SizedBox.shrink(),
+                  onTap: null,
+                  showDivider: false,
+                  isPlaceholder: true,
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAddressCard(AppState appState) {
+    return _buildCard(
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(12),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: () {
+            Clipboard.setData(ClipboardData(
+                text: '${appState.localIp}:${appState.hostPort}'));
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Address copied to clipboard'),
+                duration: Duration(seconds: 1),
+              ),
+            );
+          },
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'Address',
+                  style: TextStyle(
+                    fontSize: 16, fontWeight: FontWeight.w500, color: _iosText,
+                  ),
+                ),
+                Row(
+                  children: [
+                    Text(
+                      '${appState.localIp}:${appState.hostPort}',
+                      style: const TextStyle(fontSize: 16, color: _iosGray),
+                    ),
+                    const SizedBox(width: 8),
+                    const Icon(Icons.copy, size: 18, color: _iosGray),
+                  ],
+                ),
+              ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildConnectedDevices(AppState appState) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'CONNECTED DEVICES',
+          style: TextStyle(
+            fontSize: 13, fontWeight: FontWeight.w600,
+            color: _iosGray, letterSpacing: 1,
+          ),
+        ),
+        const SizedBox(height: 8),
+        _buildCard(
+          child: Column(
+            children: [
+              if (appState.participants.isEmpty)
+                _listTile(
+                  label: 'No one connected yet',
+                  trailing: const SizedBox.shrink(),
+                  onTap: null,
+                  showDivider: false,
+                  isPlaceholder: true,
+                )
+              else
+                ...appState.participants.asMap().entries.map((e) {
+                  final isLast = e.key == appState.participants.length - 1;
+                  return _listTile(
+                    label: e.value,
+                    trailing: const Icon(
+                      Icons.person_outline, size: 20, color: _iosText,
+                    ),
+                    onTap: null,
+                    showDivider: !isLast,
+                  );
+                }).toList(),
+            ],
+          ),
+        ),
       ],
+    );
+  }
+
+  Widget _buildParticipants(AppState appState) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'PARTICIPANTS',
+          style: TextStyle(
+            fontSize: 13, fontWeight: FontWeight.w600,
+            color: _iosGray, letterSpacing: 1,
+          ),
+        ),
+        const SizedBox(height: 8),
+        _buildCard(
+          child: Column(
+            children: [
+              if (appState.participants.isEmpty)
+                _listTile(
+                  label: 'No participants',
+                  trailing: const SizedBox.shrink(),
+                  onTap: null,
+                  showDivider: false,
+                  isPlaceholder: true,
+                )
+              else
+                ...appState.participants.asMap().entries.map((e) {
+                  final isLast = e.key == appState.participants.length - 1;
+                  return _listTile(
+                    label: e.value,
+                    trailing: const Icon(
+                      Icons.wifi_tethering, size: 20, color: _iosText,
+                    ),
+                    onTap: null,
+                    showDivider: !isLast,
+                  );
+                }).toList(),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCard({required Widget child}) {
+    return Container(
+      decoration: BoxDecoration(
+        color: _iosCardBg,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: child,
+    );
+  }
+
+  Widget _listTile({
+    required String label,
+    required Widget trailing,
+    VoidCallback? onTap,
+    bool showDivider = true,
+    bool isPlaceholder = false,
+  }) {
+    final content = Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: isPlaceholder ? FontWeight.w400 : FontWeight.w500,
+              color: isPlaceholder ? _iosGray : _iosText,
+            ),
+          ),
+          trailing,
+        ],
+      ),
+    );
+
+    if (onTap == null) {
+      return Container(
+        decoration: BoxDecoration(
+          border: showDivider
+              ? const Border(bottom: BorderSide(color: _iosBorder))
+              : null,
+        ),
+        child: content,
+      );
+    }
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.vertical(
+          top: const Radius.circular(12),
+          bottom: Radius.circular(showDivider ? 0 : 12),
+        ),
+        onTap: onTap,
+        child: Container(
+          decoration: BoxDecoration(
+            border: showDivider
+                ? const Border(bottom: BorderSide(color: _iosBorder))
+                : null,
+          ),
+          child: content,
+        ),
+      ),
     );
   }
 }

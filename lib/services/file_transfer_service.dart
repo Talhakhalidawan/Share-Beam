@@ -20,8 +20,9 @@ class FileTransferService {
         return Response.notFound('File not found');
       }
       final stat = await file.stat();
+      final fileStream = file.openRead();
       return Response.ok(
-        file.openRead(),
+        fileStream,
         headers: {
           'Content-Length': stat.size.toString(),
           'Content-Type': 'application/octet-stream',
@@ -32,11 +33,6 @@ class FileTransferService {
     });
   }
 
-  /// Downloads a file from the remote host.
-  ///
-  /// Bug #3 fix: writes to a `.tmp` file and renames on success. If the
-  /// download fails at any point (network drop, server error, mid-stream
-  /// exception) the partial temp file is deleted so no garbage accumulates.
   Future<File?> downloadFile({
     required String ip,
     required int port,
@@ -44,59 +40,54 @@ class FileTransferService {
     required String fileName,
     required String saveDirectory,
   }) async {
-    final url      = Uri.parse('http://$ip:$port/download/$id');
-    final client   = HttpClient();
+    final url = Uri.parse('http://$ip:$port/download/$id');
+    final httpClient = HttpClient();
+
     final tempPath = '$saveDirectory/$fileName.tmp';
     final finalPath = '$saveDirectory/$fileName';
-    File? tempFile;
 
     try {
-      final request  = await client.getUrl(url);
+      final request = await httpClient.getUrl(url);
       final response = await request.close();
 
-      if (response.statusCode != 200) {
-        print('[FileTransferService] Server returned ${response.statusCode}');
-        return null;
-      }
+      if (response.statusCode == 200) {
+        final contentLength = response.contentLength;
+        final tempFile = File(tempPath);
+        final sink = tempFile.openWrite();
 
-      final contentLength = response.contentLength;
-      tempFile = File(tempPath);
-      final sink = tempFile.openWrite();
-
-      try {
-        int received = 0;
+        int receivedBytes = 0;
         await for (final chunk in response) {
           sink.add(chunk);
-          received += chunk.length;
+          receivedBytes += chunk.length;
           if (contentLength > 0) {
-            _progressController.add({id: received / contentLength});
+            _progressController.add({id: receivedBytes / contentLength});
           }
         }
         await sink.close();
-
-        // Atomic-ish: rename temp → final path.
-        final saved = await tempFile.rename(finalPath);
         _progressController.add({id: 1.0});
-        return saved;
-      } catch (e) {
-        await sink.close();
-        // Clean up the partial file so the user doesn't see corrupt data.
-        if (await tempFile.exists()) await tempFile.delete();
-        print('[FileTransferService] Download interrupted: $e');
-        return null;
+
+        // Atomic rename on success
+        final finalFile = File(finalPath);
+        if (await finalFile.exists()) await finalFile.delete();
+        await tempFile.rename(finalPath);
+        return finalFile;
       }
     } catch (e) {
       print('[FileTransferService] Download error: $e');
-      if (tempFile != null && await tempFile.exists()) {
-        await tempFile.delete();
-      }
-      return null;
+      // Clean up partial file
+      try {
+        final temp = File(tempPath);
+        if (await temp.exists()) await temp.delete();
+      } catch (_) {}
     } finally {
-      client.close();
+      httpClient.close();
     }
+    return null;
   }
 
-  void clearHostedFiles() => _hostedFiles.clear();
+  void clearHostedFiles() {
+    _hostedFiles.clear();
+  }
 
   void dispose() {
     _progressController.close();

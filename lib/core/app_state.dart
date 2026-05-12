@@ -36,7 +36,7 @@ class AppState extends ChangeNotifier {
   bool isBusy            = false;
 
   String  localIp         = '127.0.0.1';
-  String? connectedHostIp;   // set when we successfully connect as a client
+  String? connectedHostIp;
   int     connectedHostPort = 9876;
 
   String connectionStatus = '';
@@ -86,8 +86,6 @@ class AppState extends ChangeNotifier {
     });
   }
 
-  // ── Status ─────────────────────────────────────────────────────────────────
-
   void _setStatus(String status, {bool persistent = false}) {
     _statusTimer?.cancel();
     connectionStatus = status;
@@ -107,8 +105,6 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  // ── Helpers ────────────────────────────────────────────────────────────────
-
   void _handleIncomingPayload(SharePayload payload) {
     if (!history.any((item) => item.id == payload.id)) {
       history.add(payload);
@@ -126,11 +122,8 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  // ── Network init ───────────────────────────────────────────────────────────
-
   Future<void> _initNetwork() async {
     localIp = await NetworkService.getLocalIp();
-    // Tell DiscoveryService our IP so it can filter self-announces (Bug #1).
     _discoveryService.setLocalIp(localIp);
     notifyListeners();
 
@@ -142,8 +135,6 @@ class AppState extends ChangeNotifier {
       }
     }
   }
-
-  // ── Hosting ────────────────────────────────────────────────────────────────
 
   Future<void> startHosting() async {
     if (isBusy || isHosting) return;
@@ -195,11 +186,10 @@ class AppState extends ChangeNotifier {
     notifyListeners();
 
     if (!kIsWeb) {
-      try { await _discoveryService.stopHost(); }        catch (_) {}
-      // Keep the listener alive — other hosts may still be on the network.
-      try { _discoveryService.clearResults(); }          catch (_) {}
-      try { await _hostService.stopServer(); }           catch (_) {}
-      try { _fileTransferService.clearHostedFiles(); }   catch (_) {}
+      try { await _discoveryService.stopHost(); }   catch (_) {}
+      try { _discoveryService.clearResults(); }     catch (_) {}
+      try { await _hostService.stopServer(); }      catch (_) {}
+      try { _fileTransferService.clearHostedFiles(); } catch (_) {}
     }
 
     discoveredHosts  = [];
@@ -212,27 +202,21 @@ class AppState extends ChangeNotifier {
   Future<void> toggleHosting(bool enable) =>
       enable ? startHosting() : stopHosting();
 
-  // ── Discovery ──────────────────────────────────────────────────────────────
-
   Future<void> refreshDiscovery() async {
     if (kIsWeb || isScanning) return;
     isScanning = true;
     notifyListeners();
 
     try {
-      // startDiscovery is idempotent; also sends a fresh query burst.
       await _discoveryService.startDiscovery();
     } catch (e) {
       print('[AppState] refreshDiscovery: $e');
     }
 
-    // Match the burst duration (3 × 200 ms) + a small margin.
     await Future.delayed(const Duration(milliseconds: 700));
     isScanning = false;
     notifyListeners();
   }
-
-  // ── Connection ─────────────────────────────────────────────────────────────
 
   Future<void> connectTo(String ip, int port) async {
     if (isBusy) return;
@@ -249,10 +233,8 @@ class AppState extends ChangeNotifier {
         connectedHostPort = port;
         _setStatus('Connected to $ip:$port', persistent: true);
       } else {
-        // Bug fix: do NOT remove the device from the discovered list on failure.
-        // The host is likely still running; the failure may be transient
-        // (wrong routing table entry, Android radio wake-up delay, etc.).
-        // The TTL mechanism will remove it if it truly goes away.
+        // CRITICAL: Do NOT remove from discovered list on failure.
+        // The host may still be alive; TTL will remove it if it dies.
         _setStatus(
           'Could not reach $ip:$port after 3 attempts. '
           'Make sure both devices are on the same Wi-Fi network and the host '
@@ -279,8 +261,6 @@ class AppState extends ChangeNotifier {
     connectionStatus  = '';
     notifyListeners();
   }
-
-  // ── Sharing ────────────────────────────────────────────────────────────────
 
   Future<void> shareText(String text) async {
     if (text.isEmpty) return;
@@ -317,10 +297,6 @@ class AppState extends ChangeNotifier {
       fileName:   file.path.split(io.Platform.pathSeparator).last,
       size:       stat.size,
       senderName: deviceName,
-      // Embed download coordinates so receivers can fetch the file.
-      // The HTTP server only runs on the HOST, so senderPort = hostPort.
-      senderIp:   localIp,
-      senderPort: hostPort,
     );
 
     history.add(payload);
@@ -357,8 +333,6 @@ class AppState extends ChangeNotifier {
       _setStatus('Download failed. Is the host still online?');
     }
   }
-
-  // ── Dispose ────────────────────────────────────────────────────────────────
 
   @override
   void dispose() {
