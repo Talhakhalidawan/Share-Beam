@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 import 'package:pasteboard/pasteboard.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:file_selector/file_selector.dart';
 
 import '../../core/app_state.dart';
 import '../../core/models.dart';
@@ -955,26 +956,29 @@ class _SmartInputBarState extends State<SmartInputBar> {
 
   void _pickFile({bool image = false}) async {
     try {
-      FilePickerResult? result;
-      
       if (io.Platform.isAndroid || io.Platform.isIOS) {
-        result = await FilePicker.platform.pickFiles(
+        final result = await FilePicker.platform.pickFiles(
           type: image ? FileType.image : FileType.any,
           allowCompression: false,
           allowMultiple: false,
         );
+        
+        if (result != null && result.files.isNotEmpty) {
+          final path = result.files.single.path;
+          if (path != null) {
+            await context.read<AppState>().shareFile(io.File(path));
+          }
+        }
       } else {
-        result = await FilePicker.platform.pickFiles(
-          type: image ? FileType.image : FileType.any,
-          allowMultiple: false,
-          withData: false,
-        );
-      }
-      
-      if (result != null && result.files.isNotEmpty) {
-        final path = result.files.single.path;
-        if (path != null) {
-          await context.read<AppState>().shareFile(io.File(path));
+        // Use file_selector for Desktop (Linux, Windows, macOS) to avoid zenity dependency
+        final typeGroup = image
+            ? const XTypeGroup(label: 'Images', extensions: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'heic'])
+            : const XTypeGroup(label: 'All Files');
+
+        final XFile? file = await openFile(acceptedTypeGroups: [typeGroup]);
+        
+        if (file != null) {
+          await context.read<AppState>().shareFile(io.File(file.path));
         }
       }
     } catch (e) {
