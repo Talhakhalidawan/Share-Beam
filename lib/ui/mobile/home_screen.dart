@@ -227,22 +227,11 @@ class _HomeScreenState extends State<HomeScreen> {
     final bubbleColor =
         isMe ? const Color(0xFFDCF8C6) : AppTheme.surfaceColor;
 
-    final borderRadius = isMe
-        ? const BorderRadius.only(
-            topLeft: Radius.circular(16),
-            topRight: Radius.circular(16),
-            bottomLeft: Radius.circular(16),
-            bottomRight: Radius.circular(4),
-          )
-        : const BorderRadius.only(
-            topLeft: Radius.circular(16),
-            topRight: Radius.circular(16),
-            bottomRight: Radius.circular(16),
-            bottomLeft: Radius.circular(4),
-          );
+    // All corners fully rounded as requested
+    final borderRadius = BorderRadius.circular(16);
 
     return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.only(bottom: 4),
       child: Column(
         crossAxisAlignment: alignment,
         children: [
@@ -255,7 +244,7 @@ class _HomeScreenState extends State<HomeScreen> {
               Flexible(
                 child: Container(
                   constraints: BoxConstraints(
-                    maxWidth: MediaQuery.of(context).size.width * 0.78,
+                    maxWidth: MediaQuery.of(context).size.width * 0.8,
                   ),
                   decoration: BoxDecoration(
                     color: bubbleColor,
@@ -308,61 +297,64 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildTextContent(SharePayload payload, bool showSender, bool isMe) {
     final time = DateFormat('HH:mm').format(payload.timestamp);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        if (showSender)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 8, 12, 2),
-            child: Text(
-              payload.senderName,
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: UserColorGenerator.forName(payload.senderName),
-              ),
-            ),
-          ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(12, 4, 12, 4),
-          child: SelectableText(
-            payload.data ?? '',
-            style: const TextStyle(fontSize: 15, color: AppTheme.textMain),
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(12, 2, 12, 8),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              if (!isMe) ...[
-                GestureDetector(
-                  onTap: () {
-                    Clipboard.setData(
-                        ClipboardData(text: payload.data ?? ''));
-                    _showCopiedSnack();
-                  },
-                  child: Icon(
-                    Icons.copy,
-                    size: 14,
-                    color: AppTheme.textMuted.withOpacity(0.7),
+    
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      // IntrinsicWidth forces the container to perfectly hug the text
+      // solving the "small text but big container" issue
+      child: IntrinsicWidth(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (showSender)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Text(
+                  payload.senderName,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: UserColorGenerator.forName(payload.senderName),
                   ),
                 ),
-                const SizedBox(width: 8),
-              ],
-              Text(
-                time,
-                style: TextStyle(
-                  fontSize: 11,
-                  color: AppTheme.textMuted.withOpacity(0.8),
-                ),
               ),
-            ],
-          ),
+            SelectableText(
+              payload.data ?? '',
+              style: const TextStyle(fontSize: 15, color: AppTheme.textMain),
+            ),
+            const SizedBox(height: 2),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (!isMe) ...[
+                  GestureDetector(
+                    onTap: () {
+                      Clipboard.setData(
+                          ClipboardData(text: payload.data ?? ''));
+                      _showCopiedSnack();
+                    },
+                    child: const Icon(
+                      Icons.copy,
+                      size: 14,
+                      color: AppTheme.textMuted,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                ],
+                Text(
+                  time,
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: AppTheme.textMuted.withOpacity(0.8),
+                  ),
+                ),
+              ],
+            ),
+          ],
         ),
-      ],
+      ),
     );
   }
 
@@ -375,145 +367,136 @@ class _HomeScreenState extends State<HomeScreen> {
     final progress = appState.downloadsProgress[payload.id];
     final isDownloading = progress != null && progress < 1.0;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        if (showSender)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 8, 12, 2),
-            child: Text(
-              payload.senderName,
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: UserColorGenerator.forName(payload.senderName),
-              ),
-            ),
-          ),
-        GestureDetector(
-          onTap: isDownloaded
-              ? () => _openFullScreenImage(context, localPath!)
-              : null,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(10),
-              child: isDownloaded
-                  ? Image.file(
-                      io.File(localPath),
-                      width: 240,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) =>
-                          _buildImagePlaceholder(payload, appState, isDownloading, progress),
-                    )
-                  : _buildImagePlaceholder(payload, appState, isDownloading, progress),
-            ),
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(10, 4, 10, 8),
-          child: Row(
-            children: [
-              Text(
-                time,
+    // All corners fully rounded as requested
+    final innerRadius = BorderRadius.circular(12);
+
+    return Padding(
+      padding: const EdgeInsets.all(4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (showSender)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(6, 4, 6, 6),
+              child: Text(
+                payload.senderName,
                 style: TextStyle(
-                  fontSize: 11,
-                  color: AppTheme.textMuted.withOpacity(0.8),
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: UserColorGenerator.forName(payload.senderName),
                 ),
               ),
-              const Spacer(),
-              if (isDownloaded && !isMe) ...[
-                GestureDetector(
-                  onTap: () => _copyImageToClipboard(payload, appState),
-                  child: Icon(
-                    Icons.copy,
-                    size: 16,
-                    color: AppTheme.textMuted.withOpacity(0.7),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                GestureDetector(
-                  onTap: () => _saveImageToLocalStorage(localPath!),
-                  child: Icon(
-                    Icons.save_alt,
-                    size: 16,
-                    color: AppTheme.accentColor,
-                  ),
-                ),
-              ],
-            ],
+            ),
+          GestureDetector(
+            onTap: isDownloaded
+                ? () => _openFullScreenImage(context, localPath!)
+                : null,
+            child: ClipRRect(
+              borderRadius: innerRadius,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  isDownloaded
+                      ? Image.file(
+                          io.File(localPath),
+                          width: 260,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) =>
+                              _buildImagePlaceholder(payload, appState, isDownloading, progress, isMe, isDownloaded),
+                        )
+                      : _buildImagePlaceholder(payload, appState, isDownloading, progress, isMe, isDownloaded),
+                ],
+              ),
+            ),
           ),
-        ),
-      ],
+          Padding(
+            padding: const EdgeInsets.fromLTRB(4, 6, 4, 2),
+            child: Row(
+              children: [
+                if (isDownloaded && !isMe) ...[
+                  Text(
+                    time,
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: AppTheme.textMuted.withOpacity(0.8),
+                    ),
+                  ),
+                  const Spacer(),
+                  GestureDetector(
+                    onTap: () => _copyImageToClipboard(payload, appState),
+                    child: const Icon(
+                      Icons.copy,
+                      size: 16,
+                      color: AppTheme.textMuted,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  GestureDetector(
+                    onTap: () => _saveImageToLocalStorage(localPath!),
+                    child: const Icon(
+                      Icons.save_alt,
+                      size: 16,
+                      color: AppTheme.textMuted,
+                    ),
+                  ),
+                ] else ...[
+                  const Spacer(),
+                  Text(
+                    time,
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: AppTheme.textMuted.withOpacity(0.8),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
   Widget _buildImagePlaceholder(SharePayload payload, AppState appState,
-      bool isDownloading, double? progress) {
+      bool isDownloading, double? progress, bool isMe, bool isDownloaded) {
     return Container(
-      width: 240,
-      height: 140,
-      color: AppTheme.accentLight,
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const Icon(Icons.image_outlined,
-              size: 36, color: AppTheme.textMuted),
-          const SizedBox(height: 6),
-          Text(
-            payload.fileName,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontSize: 13, color: AppTheme.textMain),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            _formatBytes(payload.size),
-            style: const TextStyle(fontSize: 11, color: AppTheme.textMuted),
-          ),
-          if (isDownloading) ...[
-            const SizedBox(height: 8),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(3),
-                child: LinearProgressIndicator(
-                  value: progress,
-                  backgroundColor: AppTheme.borderColor,
-                  minHeight: 3,
-                ),
-              ),
-            ),
-          ] else if (payload.senderName != appState.deviceName) ...[
-            const SizedBox(height: 8),
-            GestureDetector(
-              onTap: () => _downloadImage(payload, appState),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                decoration: BoxDecoration(
-                  color: AppTheme.accentColor,
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: const Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.download, color: Colors.white, size: 16),
-                    SizedBox(width: 6),
-                    Text(
-                      'Download',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
+      width: 260,
+      height: 260,
+      color: const Color(0xFF1E293B), // High contrast slate dark color
+      child: Center(
+        child: isDownloading
+            ? CircularProgressIndicator(
+                value: progress,
+                color: Colors.white,
+                strokeWidth: 3,
+              )
+            : (!isDownloaded && !isMe ? Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  GestureDetector(
+                    onTap: () => appState.downloadPayload(payload),
+                    child: Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withOpacity(0.5),
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white24, width: 1.5),
                       ),
+                      child: const Icon(Icons.download, color: Colors.white, size: 28),
                     ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ],
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    _formatBytes(payload.size),
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.white,
+                    ),
+                  ),
+                ],
+              ) : const Icon(Icons.image, color: Colors.white54, size: 48)),
       ),
     );
   }
@@ -527,16 +510,18 @@ class _HomeScreenState extends State<HomeScreen> {
     final progress = appState.downloadsProgress[payload.id];
     final isDownloading = progress != null && progress < 1.0;
 
-    return Container(
-      width: 260,
-      padding: const EdgeInsets.all(12),
+    // All corners fully rounded as requested
+    final innerRadius = BorderRadius.circular(12);
+
+    return Padding(
+      padding: const EdgeInsets.all(4),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
           if (showSender)
             Padding(
-              padding: const EdgeInsets.only(bottom: 4),
+              padding: const EdgeInsets.fromLTRB(6, 4, 6, 6),
               child: Text(
                 payload.senderName,
                 style: TextStyle(
@@ -546,88 +531,104 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
             ),
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: AppTheme.accentColor.withOpacity(0.1),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(
-                  isDownloaded ? Icons.file_present : Icons.insert_drive_file,
-                  color: AppTheme.accentColor,
-                  size: 22,
-                ),
+          
+          // Dark box container (no overlapped icons anymore)
+          ClipRRect(
+            borderRadius: innerRadius,
+            child: Container(
+              width: 260,
+              height: 120,
+              color: const Color(0xFF1E293B),
+              child: Center(
+                child: isDownloading
+                    ? CircularProgressIndicator(
+                        value: progress,
+                        color: Colors.white,
+                        strokeWidth: 3,
+                      )
+                    : (!isDownloaded && !isMe
+                        ? Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              GestureDetector(
+                                onTap: () => _downloadFile(payload, appState),
+                                child: Container(
+                                  padding: const EdgeInsets.all(16),
+                                  decoration: BoxDecoration(
+                                    color: Colors.black.withOpacity(0.5),
+                                    shape: BoxShape.circle,
+                                    border: Border.all(color: Colors.white24, width: 1.5),
+                                  ),
+                                  // Clean download icon (no file icon behind it)
+                                  child: const Icon(Icons.download, color: Colors.white, size: 28),
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              Text(
+                                _formatBytes(payload.size),
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ],
+                          )
+                        // If downloaded (or sent by me), show file icon cleanly
+                        : const Icon(Icons.insert_drive_file, color: Colors.white54, size: 48)),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
+            ),
+          ),
+          
+          // Bottom text / file info bar
+          Padding(
+            padding: const EdgeInsets.fromLTRB(6, 8, 6, 4),
+            child: SizedBox(
+              width: 248, // Aligns perfectly with the 260 container inside the padding
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
                       payload.fileName,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         fontWeight: FontWeight.w500,
                         fontSize: 14,
+                        color: AppTheme.textMain,
                       ),
                     ),
-                    const SizedBox(height: 2),
+                  ),
+                  const SizedBox(width: 8),
+                  if (isDownloaded && !isMe) ...[
                     Text(
-                      _formatBytes(payload.size),
-                      style: const TextStyle(
-                        fontSize: 12,
+                      time,
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: AppTheme.textMuted.withOpacity(0.8),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    GestureDetector(
+                      onTap: () => _saveFileToLocalStorage(localPath!, payload.fileName),
+                      child: const Icon(
+                        Icons.save_alt,
+                        size: 16,
                         color: AppTheme.textMuted,
                       ),
                     ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          if (isDownloading) ...[
-            const SizedBox(height: 10),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(3),
-              child: LinearProgressIndicator(
-                value: progress,
-                backgroundColor: AppTheme.borderColor,
-                minHeight: 3,
+                  ] else ...[
+                    Text(
+                      time,
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: AppTheme.textMuted.withOpacity(0.8),
+                      ),
+                    ),
+                  ]
+                ],
               ),
             ),
-          ],
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Text(
-                time,
-                style: TextStyle(
-                  fontSize: 11,
-                  color: AppTheme.textMuted.withOpacity(0.8),
-                ),
-              ),
-              const Spacer(),
-              if (!isMe && !isDownloaded)
-                GestureDetector(
-                  onTap: () => _downloadFile(payload, appState),
-                  child: Icon(
-                    Icons.download,
-                    size: 16,
-                    color: AppTheme.accentColor,
-                  ),
-                ),
-              if (isDownloaded)
-                GestureDetector(
-                  onTap: () => _saveFileToLocalStorage(localPath!, payload.fileName),
-                  child: Icon(
-                    Icons.save_alt,
-                    size: 16,
-                    color: AppTheme.accentColor,
-                  ),
-                ),
-            ],
           ),
         ],
       ),
@@ -770,8 +771,6 @@ class _HomeScreenState extends State<HomeScreen> {
       if (!await file.exists()) return;
 
       if (io.Platform.isAndroid || io.Platform.isIOS) {
-        // Use share_plus to allow user to save the file
-        // This is more reliable than manually copying to Downloads on modern mobile OS
         await Share.shareXFiles([XFile(filePath, name: originalName)]);
         return;
       }
@@ -832,10 +831,9 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     return Container(
-      padding: const EdgeInsets.fromLTRB(8, 0, 8, 24),
-      decoration: BoxDecoration(
-        color: AppTheme.surfaceColor,
-        border: Border(top: BorderSide(color: AppTheme.borderColor)),
+      padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+      decoration: const BoxDecoration(
+        color: Colors.transparent,
       ),
       child: SafeArea(
         child: SmartInputBar(enabled: isConnected),
@@ -918,6 +916,7 @@ class _SmartInputBarState extends State<SmartInputBar> {
   final TextEditingController _controller = TextEditingController();
   Uint8List? _pendingImageBytes;
   String? _pendingImageName;
+  
   Future<bool> _handlePaste() async {
     try {
       final bytes = await Pasteboard.image;
@@ -927,7 +926,7 @@ class _SmartInputBarState extends State<SmartInputBar> {
           _pendingImageName =
               'image_${DateTime.now().millisecondsSinceEpoch}.png';
         });
-        return true; // Successfully pasted image
+        return true; 
       }
     } catch (_) {}
 
@@ -942,6 +941,7 @@ class _SmartInputBarState extends State<SmartInputBar> {
           selection:
               TextSelection.collapsed(offset: selection.start + text.length),
         );
+        setState(() {}); // trigger rebuild for button color
         return true;
       }
     } catch (_) {}
@@ -963,6 +963,7 @@ class _SmartInputBarState extends State<SmartInputBar> {
     if (text.isNotEmpty) {
       appState.shareText(text);
       _controller.clear();
+      setState(() {}); 
     }
   }
 
@@ -982,7 +983,6 @@ class _SmartInputBarState extends State<SmartInputBar> {
           }
         }
       } else {
-        // Use file_selector for Desktop (Linux, Windows, macOS) to avoid zenity dependency
         final typeGroup = image
             ? const XTypeGroup(label: 'Images', extensions: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'heic'])
             : const XTypeGroup(label: 'All Files');
@@ -1004,6 +1004,8 @@ class _SmartInputBarState extends State<SmartInputBar> {
 
   @override
   Widget build(BuildContext context) {
+    bool hasInput = _controller.text.trim().isNotEmpty || _pendingImageBytes != null;
+
     return Shortcuts(
       shortcuts: {
         SingleActivator(LogicalKeyboardKey.keyV, control: true):
@@ -1060,19 +1062,23 @@ class _SmartInputBarState extends State<SmartInputBar> {
                   ),
                 ),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+                margin: const EdgeInsets.symmetric(vertical: 4),
                 decoration: BoxDecoration(
-                  color: AppTheme.bgColor,
+                  color: AppTheme.surfaceColor,
                   borderRadius: BorderRadius.circular(24),
                 ),
                 child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
+                    const SizedBox(width: 4),
                     IconButton(
                       icon: const Icon(Icons.add, color: AppTheme.textMuted),
                       onPressed: widget.enabled
                           ? () => _showAttachmentSheet(context)
                           : null,
                       splashRadius: 20,
+                      hoverColor: AppTheme.textMuted.withOpacity(0.1),
+                      highlightColor: Colors.transparent,
                     ),
                     Expanded(
                       child: TextField(
@@ -1090,36 +1096,42 @@ class _SmartInputBarState extends State<SmartInputBar> {
                             }
                           },
                         ),
+                        onChanged: (text) {
+                          setState(() {}); 
+                        },
                         decoration: InputDecoration(
                           hintText: widget.enabled
-                              ? 'Type a message...'
+                              ? 'Type a message'
                               : 'Connect to send',
+                          hintStyle: const TextStyle(color: AppTheme.textMuted),
                           border: InputBorder.none,
+                          focusedBorder: InputBorder.none,
+                          enabledBorder: InputBorder.none,
+                          errorBorder: InputBorder.none,
+                          disabledBorder: InputBorder.none,
+                          filled: true,
+                          fillColor: Colors.transparent,
+                          hoverColor: Colors.transparent,
                           contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 4, vertical: 10),
+                              horizontal: 8, vertical: 14), 
                           isDense: true,
                         ),
                         onSubmitted: (_) => _send(),
                       ),
                     ),
-                    GestureDetector(
-                      onTap: widget.enabled ? _send : null,
-                      child: Container(
-                        margin: const EdgeInsets.only(right: 4),
-                        padding: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          color: widget.enabled
-                              ? AppTheme.accentColor
-                              : AppTheme.textMuted.withOpacity(0.3),
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(
-                          Icons.send,
-                          color: Colors.white,
-                          size: 20,
-                        ),
+                    IconButton(
+                      icon: Icon(
+                        Icons.send, 
+                        color: (widget.enabled && hasInput)
+                            ? const Color(0xFF007AFF) 
+                            : AppTheme.textMuted.withOpacity(0.3)
                       ),
+                      onPressed: (widget.enabled && hasInput) ? _send : null,
+                      splashRadius: 20,
+                      hoverColor: AppTheme.textMuted.withOpacity(0.1),
+                      highlightColor: Colors.transparent,
                     ),
+                    const SizedBox(width: 4),
                   ],
                 ),
               ),
@@ -1175,23 +1187,6 @@ class _SmartInputBarState extends State<SmartInputBar> {
                   onTap: () {
                     Navigator.pop(ctx);
                     _pickFile(image: false);
-                  },
-                ),
-                ListTile(
-                  leading: CircleAvatar(
-                    backgroundColor: AppTheme.accentColor.withOpacity(0.1),
-                    child: const Icon(Icons.paste,
-                        color: AppTheme.accentColor),
-                  ),
-                  title: const Text('Paste from Clipboard'),
-                  onTap: () async {
-                    Navigator.pop(ctx);
-                    final success = await _handlePaste();
-                    if (!success && mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Nothing found to paste')),
-                      );
-                    }
                   },
                 ),
                 const SizedBox(height: 8),
