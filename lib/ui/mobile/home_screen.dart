@@ -104,7 +104,7 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.settings, color: AppTheme.accentColor),
+            icon: Icon(Icons.settings, color: AppTheme.accentColor),
             onPressed: () => Navigator.pushNamed(context, '/settings'),
           ),
           const SizedBox(width: 8),
@@ -146,9 +146,14 @@ class _HomeScreenState extends State<HomeScreen> {
     return ListView.builder(
       controller: _scrollController,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+      addAutomaticKeepAlives: false,
+      addRepaintBoundaries: true,
+      cacheExtent: 200,
       itemCount: history.length,
       itemBuilder: (context, index) {
-        return _buildMessageBubble(context, history[index], index);
+        return RepaintBoundary(
+          child: _buildMessageBubble(context, history[index], index),
+        );
       },
     );
   }
@@ -166,7 +171,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 color: AppTheme.accentLight,
                 shape: BoxShape.circle,
               ),
-              child: const Icon(
+              child: Icon(
                 Icons.wifi_tethering,
                 size: 48,
                 color: AppTheme.accentColor,
@@ -225,9 +230,8 @@ class _HomeScreenState extends State<HomeScreen> {
         isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start;
 
     final bubbleColor =
-        isMe ? const Color(0xFFDCF8C6) : AppTheme.surfaceColor;
+        isMe ? AppTheme.myBubbleColor : AppTheme.surfaceColor;
 
-    // All corners fully rounded as requested
     final borderRadius = BorderRadius.circular(16);
 
     return Padding(
@@ -300,8 +304,6 @@ class _HomeScreenState extends State<HomeScreen> {
     
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-      // IntrinsicWidth forces the container to perfectly hug the text
-      // solving the "small text but big container" issue
       child: IntrinsicWidth(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -367,8 +369,9 @@ class _HomeScreenState extends State<HomeScreen> {
     final progress = appState.downloadsProgress[payload.id];
     final isDownloading = progress != null && progress < 1.0;
 
-    // All corners fully rounded as requested
+    final isCopyable = payload.size <= 5 * 1024 * 1024;
     final innerRadius = BorderRadius.circular(12);
+    final dpr = MediaQuery.of(context).devicePixelRatio;
 
     return Padding(
       padding: const EdgeInsets.all(4),
@@ -401,6 +404,8 @@ class _HomeScreenState extends State<HomeScreen> {
                       ? Image.file(
                           io.File(localPath),
                           width: 260,
+                          cacheWidth: (260 * dpr).toInt(),
+                          filterQuality: FilterQuality.low,
                           fit: BoxFit.cover,
                           errorBuilder: (_, __, ___) =>
                               _buildImagePlaceholder(payload, appState, isDownloading, progress, isMe, isDownloaded),
@@ -423,15 +428,17 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
                   const Spacer(),
-                  GestureDetector(
-                    onTap: () => _copyImageToClipboard(payload, appState),
-                    child: const Icon(
-                      Icons.copy,
-                      size: 16,
-                      color: AppTheme.textMuted,
+                  if (isCopyable) ...[
+                    GestureDetector(
+                      onTap: () => _copyImageToClipboard(payload, appState),
+                      child: const Icon(
+                        Icons.copy,
+                        size: 16,
+                        color: AppTheme.textMuted,
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 12),
+                    const SizedBox(width: 12),
+                  ],
                   GestureDetector(
                     onTap: () => _saveImageToLocalStorage(localPath!),
                     child: const Icon(
@@ -463,7 +470,7 @@ class _HomeScreenState extends State<HomeScreen> {
     return Container(
       width: 260,
       height: 260,
-      color: const Color(0xFF1E293B), // High contrast slate dark color
+      color: AppTheme.placeholderBg,
       child: Center(
         child: isDownloading
             ? CircularProgressIndicator(
@@ -510,7 +517,6 @@ class _HomeScreenState extends State<HomeScreen> {
     final progress = appState.downloadsProgress[payload.id];
     final isDownloading = progress != null && progress < 1.0;
 
-    // All corners fully rounded as requested
     final innerRadius = BorderRadius.circular(12);
 
     return Padding(
@@ -532,13 +538,12 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
           
-          // Dark box container (no overlapped icons anymore)
           ClipRRect(
             borderRadius: innerRadius,
             child: Container(
               width: 260,
               height: 120,
-              color: const Color(0xFF1E293B),
+              color: AppTheme.placeholderBg,
               child: Center(
                 child: isDownloading
                     ? CircularProgressIndicator(
@@ -559,7 +564,6 @@ class _HomeScreenState extends State<HomeScreen> {
                                     shape: BoxShape.circle,
                                     border: Border.all(color: Colors.white24, width: 1.5),
                                   ),
-                                  // Clean download icon (no file icon behind it)
                                   child: const Icon(Icons.download, color: Colors.white, size: 28),
                                 ),
                               ),
@@ -574,17 +578,15 @@ class _HomeScreenState extends State<HomeScreen> {
                               ),
                             ],
                           )
-                        // If downloaded (or sent by me), show file icon cleanly
                         : const Icon(Icons.insert_drive_file, color: Colors.white54, size: 48)),
               ),
             ),
           ),
           
-          // Bottom text / file info bar
           Padding(
             padding: const EdgeInsets.fromLTRB(6, 8, 6, 4),
             child: SizedBox(
-              width: 248, // Aligns perfectly with the 260 container inside the padding
+              width: 248, 
               child: Row(
                 children: [
                   Expanded(
@@ -645,10 +647,14 @@ class _HomeScreenState extends State<HomeScreen> {
             elevation: 0,
             iconTheme: const IconThemeData(color: Colors.white),
           ),
-          body: Center(
-            child: InteractiveViewer(
-              minScale: 0.5,
-              maxScale: 4.0,
+          body: InteractiveViewer(
+            minScale: 1.0,
+            maxScale: 5.0,
+            clipBehavior: Clip.none,
+            panEnabled: true,
+            child: SizedBox(
+              width: double.infinity,
+              height: double.infinity,
               child: Image.file(
                 io.File(imagePath),
                 fit: BoxFit.contain,
@@ -663,16 +669,44 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _copyImageToClipboard(SharePayload payload, AppState appState) async {
     try {
       String? path = appState.downloadedFilePaths[payload.id];
-      
       if (path == null || !io.File(path).existsSync()) {
+        _showStatusSnack('Downloading image first...');
         await appState.downloadPayload(payload);
         path = appState.downloadedFilePaths[payload.id];
       }
       
-      if (path != null && io.File(path).existsSync()) {
-        final bytes = await io.File(path).readAsBytes();
+      if (path == null || !io.File(path).existsSync()) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Download failed, cannot copy.')),
+          );
+        }
+        return;
+      }
+
+      final file = io.File(path);
+      final bytes = await file.readAsBytes();
+      
+      try {
         await Pasteboard.writeImage(bytes);
         if (mounted) _showCopiedSnack();
+        return;
+      } catch (e) {
+        print('[Home] writeImage failed: $e');
+      }
+      
+      try {
+        await Pasteboard.writeFiles([path]);
+        if (mounted) _showCopiedSnack();
+        return;
+      } catch (e) {
+        print('[Home] writeFiles failed: $e');
+      }
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Unable to copy image. Please save it instead.')),
+        );
       }
     } catch (e) {
       if (mounted) {
@@ -683,16 +717,11 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  Future<void> _downloadImage(SharePayload payload, AppState appState) async {
-    try {
-      await appState.downloadPayload(payload);
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Download failed: $e')),
-        );
-      }
-    }
+  void _showStatusSnack(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(msg), duration: const Duration(seconds: 1)),
+    );
   }
 
   Future<void> _downloadFile(SharePayload payload, AppState appState) async {
@@ -726,7 +755,6 @@ class _HomeScreenState extends State<HomeScreen> {
         return;
       }
 
-      // Rest of the logic for Desktop
       final bytes = await file.readAsBytes();
       
       io.Directory? saveDir;
@@ -845,8 +873,8 @@ class _HomeScreenState extends State<HomeScreen> {
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
       decoration: BoxDecoration(
-        color: const Color(0xFFFFE5E5),
-        border: Border(top: BorderSide(color: AppTheme.accentRed)),
+        color: AppTheme.accentRed.withOpacity(0.1),
+        border: const Border(top: BorderSide(color: AppTheme.accentRed)),
       ),
       child: SafeArea(
         child: Row(
@@ -941,7 +969,7 @@ class _SmartInputBarState extends State<SmartInputBar> {
           selection:
               TextSelection.collapsed(offset: selection.start + text.length),
         );
-        setState(() {}); // trigger rebuild for button color
+        setState(() {}); 
         return true;
       }
     } catch (_) {}
@@ -1071,15 +1099,62 @@ class _SmartInputBarState extends State<SmartInputBar> {
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
                     const SizedBox(width: 4),
-                    IconButton(
+                    
+                    widget.enabled ? PopupMenuButton<int>(
+                      tooltip: 'Attach',
+                      color: AppTheme.surfaceColor,
+                      elevation: 4,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      position: PopupMenuPosition.over,
+                      offset: const Offset(0, -10),
+                      onSelected: (value) {
+                        if (value == 0) _pickFile(image: true);
+                        if (value == 1) _pickFile(image: false);
+                      },
                       icon: const Icon(Icons.add, color: AppTheme.textMuted),
-                      onPressed: widget.enabled
-                          ? () => _showAttachmentSheet(context)
-                          : null,
                       splashRadius: 20,
-                      hoverColor: AppTheme.textMuted.withOpacity(0.1),
-                      highlightColor: Colors.transparent,
+                      itemBuilder: (context) => [
+                        PopupMenuItem(
+                          value: 0,
+                          child: Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: AppTheme.accentColor.withOpacity(0.1),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: Icon(Icons.image, color: AppTheme.accentColor, size: 20),
+                              ),
+                              const SizedBox(width: 12),
+                              const Text('Image', style: TextStyle(fontWeight: FontWeight.w500)),
+                            ],
+                          ),
+                        ),
+                        PopupMenuItem(
+                          value: 1,
+                          child: Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: AppTheme.accentColor.withOpacity(0.1),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: Icon(Icons.insert_drive_file, color: AppTheme.accentColor, size: 20),
+                              ),
+                              const SizedBox(width: 12),
+                              const Text('Document', style: TextStyle(fontWeight: FontWeight.w500)),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ) : IconButton(
+                      icon: const Icon(Icons.add, color: AppTheme.textMuted),
+                      onPressed: null,
+                      splashRadius: 20,
                     ),
+
                     Expanded(
                       child: TextField(
                         controller: _controller,
@@ -1123,7 +1198,7 @@ class _SmartInputBarState extends State<SmartInputBar> {
                       icon: Icon(
                         Icons.send, 
                         color: (widget.enabled && hasInput)
-                            ? const Color(0xFF007AFF) 
+                            ? AppTheme.accentColor
                             : AppTheme.textMuted.withOpacity(0.3)
                       ),
                       onPressed: (widget.enabled && hasInput) ? _send : null,
@@ -1139,62 +1214,6 @@ class _SmartInputBarState extends State<SmartInputBar> {
           ),
         ),
       ),
-    );
-  }
-
-  void _showAttachmentSheet(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: AppTheme.surfaceColor,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (ctx) {
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 40,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: AppTheme.borderColor,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                ListTile(
-                  leading: CircleAvatar(
-                    backgroundColor: AppTheme.accentColor.withOpacity(0.1),
-                    child: const Icon(Icons.image,
-                        color: AppTheme.accentColor),
-                  ),
-                  title: const Text('Image'),
-                  onTap: () {
-                    Navigator.pop(ctx);
-                    _pickFile(image: true);
-                  },
-                ),
-                ListTile(
-                  leading: CircleAvatar(
-                    backgroundColor: AppTheme.accentColor.withOpacity(0.1),
-                    child: const Icon(Icons.insert_drive_file,
-                        color: AppTheme.accentColor),
-                  ),
-                  title: const Text('File'),
-                  onTap: () {
-                    Navigator.pop(ctx);
-                    _pickFile(image: false);
-                  },
-                ),
-                const SizedBox(height: 8),
-              ],
-            ),
-          ),
-        );
-      },
     );
   }
 

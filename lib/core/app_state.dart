@@ -1,7 +1,9 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io' as io;
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 import 'package:shelf_router/shelf_router.dart';
@@ -12,6 +14,8 @@ import '../services/host_service.dart';
 import '../services/client_service.dart';
 import '../services/file_transfer_service.dart';
 import '../services/network_service.dart';
+import '../services/notification_service.dart';
+import '../ui/shared/theme.dart';
 import 'models.dart';
 import 'prefs.dart';
 
@@ -58,12 +62,33 @@ class AppState extends ChangeNotifier {
   Map<String, double>    downloadsProgress = {};
   List<String>           participants      = [];
 
-  // ── Download tracking ────────────────────────────────────────────────────
   Map<String, String> downloadedFilePaths = {};
 
-  // ── Auto-download settings (tweak these anytime) ─────────────────────────
   bool autoDownloadImages        = true;
-  int  autoDownloadSizeThreshold = 1048576; // 1 MB
+  bool autoDownloadFiles         = false;
+  bool autoDownloadText          = false;
+  int  autoDownloadSizeThreshold = 1048576;
+
+  bool _notificationsEnabled = true;
+  bool get notificationsEnabled => _notificationsEnabled;
+  set notificationsEnabled(bool v) {
+    _notificationsEnabled = v;
+    Prefs.setNotificationsEnabled(v);
+    notifyListeners();
+  }
+
+  bool _persistentNotificationEnabled = false;
+  bool get persistentNotificationEnabled => _persistentNotificationEnabled;
+  set persistentNotificationEnabled(bool v) {
+    _persistentNotificationEnabled = v;
+    Prefs.setPersistentNotificationEnabled(v);
+    if (v && (isHosting || isConnectedToHost)) {
+      NotificationService.showPersistentNotification();
+    } else {
+      NotificationService.cancelPersistent();
+    }
+    notifyListeners();
+  }
 
   final StreamController<AppNotification> _notificationController =
       StreamController<AppNotification>.broadcast();
@@ -81,16 +106,11 @@ class AppState extends ChangeNotifier {
   static String _trimName(String name) {
     name = name.trim();
     if (name.length <= 15) return name;
-
-    // Split into words
     List<String> words = name.split(' ');
-    // Keep removing last word until it fits in 15 or only 1 word left
     while (words.length > 1 && words.join(' ').length > 15) {
       words.removeLast();
     }
-
     String result = words.join(' ');
-    // If even the first word is > 15, hard trim it
     if (result.length > 15) {
       result = result.substring(0, 15).trim();
     }
@@ -98,6 +118,7 @@ class AppState extends ChangeNotifier {
   }
 
   AppState() {
+    _loadSettings();
     _initNetwork();
 
     _discoveryService.devicesStream.listen((devices) {
@@ -120,8 +141,7 @@ class AppState extends ChangeNotifier {
       isConnectedToHost = false;
       connectedHostIp   = null;
       participants.clear();
-      _setStatus(
-          'The host has stopped the server. You have been disconnected.');
+      _setStatus('The host has stopped the server. You have been disconnected.');
       notifyListeners();
     });
 
@@ -129,6 +149,66 @@ class AppState extends ChangeNotifier {
       downloadsProgress.addAll(map);
       notifyListeners();
     });
+
+    NotificationService.messageActionStream.listen(_handleNotificationAction);
+    NotificationService.persistentActionStream.listen(_handlePersistentAction);
+  }
+
+  void _loadSettings() {
+    final accent = Prefs.getAccentColor();
+    final bubble = Prefs.getSentBubbleColor();
+    AppTheme.setColors(
+      accent: accent != null ? Color(accent) : null,
+      bubble: bubble != null ? Color(bubble) : null,
+    );
+
+    autoDownloadImages = Prefs.getAutoDownloadImages();
+    autoDownloadFiles = Prefs.getAutoDownloadFiles();
+    autoDownloadText = Prefs.getAutoDownloadText();
+    autoDownloadSizeThreshold = Prefs.getAutoDownloadThreshold();
+
+    _notificationsEnabled = Prefs.getNotificationsEnabled();
+    _persistentNotificationEnabled = Prefs.getPersistentNotificationEnabled();
+  }
+
+  Future<String> getSaveDirectory() async {
+    final custom = Prefs.getSaveDirectory();
+    if (custom != null && custom.isNotEmpty) {
+      final dir = io.Directory(custom);
+      if (await dir.exists()) return custom;
+    }
+    final dir = await getApplicationDocumentsDirectory();
+    return dir.path;
+  }
+
+  void _handleNotificationAction(Map<String, String> action) async {
+    final type = action['action'];
+    final payloadJson = action['payload'];
+    if (payloadJson == null || payloadJson.isEmpty) return;
+
+    try {
+      final data = jsonDecode(payloadJson) as Map<String, dynamic>;
+      final payload = SharePayload.fromJson(data);
+
+      if (type == 'copy_text' && payload.data != null) {
+        await Clipboard.setData(ClipboardData(text: payload.data!));
+        _setStatus('Copied to clipboard from notification');
+      } else if (type == 'save_image') {
+        final path = downloadedFilePaths[payload.id];
+        if (path != null && await io.File(path).exists()) {
+          _setStatus('Image saved from notification');
+        }
+      }
+    } catch (_) {}
+  }
+
+  void _handlePersistentAction(String? text) {
+    if (text == null) {
+      persistentNotificationEnabled = false;
+      NotificationService.cancelPersistent();
+    } else if (text.isNotEmpty) {
+      shareText(text);
+    }
   }
 
   void _setStatus(String status, {bool persistent = false}) {
@@ -170,24 +250,41 @@ class AppState extends ChangeNotifier {
       notifyListeners();
 
       if (payload.senderIp != null && payload.senderPort != null) {
-        final shouldAuto = (payload.type == FileTransferType.image ||
-                payload.type == FileTransferType.file) &&
-            autoDownloadImages &&
-            payload.size <= autoDownloadSizeThreshold;
-        if (shouldAuto) _autoDownload(payload);
+        if (_shouldAutoDownload(payload)) {
+          _autoDownload(payload);
+        }
       }
+
+      if (_notificationsEnabled && (payload.type != FileTransferType.announcement)) {
+        final localPath = downloadedFilePaths[payload.id];
+        NotificationService.showMessageNotification(payload, localPath: localPath);
+      }
+    }
+  }
+
+  bool _shouldAutoDownload(SharePayload payload) {
+    if (payload.size > autoDownloadSizeThreshold) return false;
+    switch (payload.type) {
+      case FileTransferType.image:
+        return autoDownloadImages;
+      case FileTransferType.file:
+        return autoDownloadFiles;
+      case FileTransferType.text:
+        return autoDownloadText;
+      default:
+        return false;
     }
   }
 
   Future<void> _autoDownload(SharePayload payload) async {
     try {
-      final dir = await getApplicationDocumentsDirectory();
+      final dir = await getSaveDirectory();
       final file = await _fileTransferService.downloadFile(
         ip: payload.senderIp!,
         port: payload.senderPort!,
         id: payload.id,
         fileName: payload.fileName,
-        saveDirectory: dir.path,
+        saveDirectory: dir,
       );
       if (file != null) {
         downloadedFilePaths[payload.id] = file.path;
@@ -280,11 +377,14 @@ class AppState extends ChangeNotifier {
 
       isHosting = true;
       _setStatus('Server running on $localIp:$hostPort', persistent: true);
+
+      if (_persistentNotificationEnabled) {
+        NotificationService.showPersistentNotification();
+      }
     } on io.SocketException catch (e) {
       if (e.osError?.errorCode == 98 ||
           e.message.contains('Address already in use')) {
-        _setStatus(
-            'Port $hostPort is already in use. Please choose a different port.');
+        _setStatus('Port $hostPort is already in use. Please choose a different port.');
       } else {
         _setStatus('Could not start server: ${e.message}');
       }
@@ -314,6 +414,10 @@ class AppState extends ChangeNotifier {
     connectionStatus = '';
     isBusy           = false;
     notifyListeners();
+
+    if (_persistentNotificationEnabled) {
+      NotificationService.cancelPersistent();
+    }
   }
 
   Future<void> toggleHosting(bool enable) =>
@@ -349,6 +453,10 @@ class AppState extends ChangeNotifier {
         connectedHostIp = ip;
         connectedHostPort = port;
         _setStatus('Connected to $ip:$port', persistent: true);
+
+        if (_persistentNotificationEnabled) {
+          NotificationService.showPersistentNotification();
+        }
       } else {
         _setStatus(
           'Could not reach $ip:$port after 3 attempts. '
@@ -381,6 +489,10 @@ class AppState extends ChangeNotifier {
     connectedHostIp = null;
     connectionStatus = '';
     notifyListeners();
+
+    if (_persistentNotificationEnabled) {
+      NotificationService.cancelPersistent();
+    }
   }
 
   Future<void> shareText(String text) async {
@@ -410,8 +522,6 @@ class AppState extends ChangeNotifier {
     try {
       final router = Router();
       _fileTransferService.setupRoutes(router);
-      // Even as a client, we start the host service server so we can serve files.
-      // We don't start discovery though.
       await _hostService.startServer(hostPort, deviceName, router);
       print('[AppState] Background file server started on $hostPort');
     } catch (e) {
@@ -478,13 +588,13 @@ class AppState extends ChangeNotifier {
       return;
     }
 
-    final dir = await getApplicationDocumentsDirectory();
+    final dir = await getSaveDirectory();
     final downloadedFile = await _fileTransferService.downloadFile(
       ip: ip,
       port: port,
       id: id,
       fileName: fileName,
-      saveDirectory: dir.path,
+      saveDirectory: dir,
     );
 
     if (downloadedFile != null) {

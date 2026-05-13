@@ -42,6 +42,41 @@ class _SettingsScreenState extends State<SettingsScreen> {
   // DIALOGS
   // ═══════════════════════════════════════════════════════════════════════════
 
+  Widget _buildGeneralSettingsLink() {
+    return _buildCard(
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(12),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: () => Navigator.pushNamed(context, '/general-settings'),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'General Settings',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500, color: _iosText),
+                ),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: const [
+                    Text(
+                      'Appearance, Downloads, Notifications',
+                      style: TextStyle(fontSize: 14, color: _iosGray),
+                    ),
+                    SizedBox(width: 4),
+                    Icon(Icons.chevron_right, color: _iosBlue, size: 20),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
   Widget _iosDialog({
     required String title,
     required String subtitle,
@@ -405,6 +440,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             const SizedBox(height: 16),
             _buildNameCard(appState),
             const SizedBox(height: 24),
+            _buildGeneralSettingsLink(),
             if (isHosting) ...[
               _buildAddressCard(appState),
               const SizedBox(height: 24),
