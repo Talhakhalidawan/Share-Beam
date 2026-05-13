@@ -1,5 +1,4 @@
-
-enum FileTransferType { text, file, announcement }
+enum FileTransferType { text, file, image, announcement }
 
 class SharePayload {
   final String id;
@@ -8,8 +7,8 @@ class SharePayload {
   final int size;
   final String? data;
   final String senderName;
-  final String? senderIp;   // IP of the device serving the file download
-  final int?    senderPort; // HTTP port of the device serving the file download
+  final String? senderIp;
+  final int?    senderPort;
   final DateTime timestamp;
 
   SharePayload({

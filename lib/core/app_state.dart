@@ -1,5 +1,6 @@
-import 'dart:io' as io;
 import 'dart:async';
+import 'dart:io' as io;
+import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
@@ -56,8 +57,18 @@ class AppState extends ChangeNotifier {
   List<SharePayload>     history           = [];
   Map<String, double>    downloadsProgress = {};
   List<String>           participants      = [];
-  final StreamController<AppNotification> _notificationController = StreamController<AppNotification>.broadcast();
-  Stream<AppNotification> get notificationStream => _notificationController.stream;
+
+  // ── Download tracking ────────────────────────────────────────────────────
+  Map<String, String> downloadedFilePaths = {};
+
+  // ── Auto-download settings (tweak these anytime) ─────────────────────────
+  bool autoDownloadImages        = true;
+  int  autoDownloadSizeThreshold = 1048576; // 1 MB
+
+  final StreamController<AppNotification> _notificationController =
+      StreamController<AppNotification>.broadcast();
+  Stream<AppNotification> get notificationStream =>
+      _notificationController.stream;
 
   String get deviceName => _deviceName;
 
@@ -72,12 +83,9 @@ class AppState extends ChangeNotifier {
 
     _discoveryService.devicesStream.listen((devices) {
       discoveredHosts = devices;
-
-      // Auto-connect to saved hosts when discovered
       if (!isHosting && !isConnectedToHost && !isBusy && devices.isNotEmpty) {
         _tryAutoConnect(devices);
       }
-
       notifyListeners();
     });
 
@@ -93,7 +101,8 @@ class AppState extends ChangeNotifier {
       isConnectedToHost = false;
       connectedHostIp   = null;
       participants.clear();
-      _setStatus('The host has stopped the server. You have been disconnected.');
+      _setStatus(
+          'The host has stopped the server. You have been disconnected.');
       notifyListeners();
     });
 
@@ -109,15 +118,16 @@ class AppState extends ChangeNotifier {
     notifyListeners();
 
     if (status.isNotEmpty) {
-      final type = (status.toLowerCase().contains('error') || 
-                   status.toLowerCase().contains('failed') ||
-                   status.toLowerCase().contains('could not') ||
-                   status.toLowerCase().contains('already in use'))
+      final type = (status.toLowerCase().contains('error') ||
+              status.toLowerCase().contains('failed') ||
+              status.toLowerCase().contains('could not') ||
+              status.toLowerCase().contains('already in use'))
           ? NotificationType.error
-          : (status.toLowerCase().contains('connected') || status.toLowerCase().contains('running'))
+          : (status.toLowerCase().contains('connected') ||
+                  status.toLowerCase().contains('running'))
               ? NotificationType.success
               : NotificationType.info;
-      
+
       _notificationController.add(AppNotification(status, type));
     }
 
@@ -139,20 +149,54 @@ class AppState extends ChangeNotifier {
     if (!history.any((item) => item.id == payload.id)) {
       history.add(payload);
       notifyListeners();
+
+      if (payload.senderIp != null && payload.senderPort != null) {
+        final shouldAuto = (payload.type == FileTransferType.image ||
+                payload.type == FileTransferType.file) &&
+            autoDownloadImages &&
+            payload.size <= autoDownloadSizeThreshold;
+        if (shouldAuto) _autoDownload(payload);
+      }
     }
+  }
+
+  Future<void> _autoDownload(SharePayload payload) async {
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      final file = await _fileTransferService.downloadFile(
+        ip: payload.senderIp!,
+        port: payload.senderPort!,
+        id: payload.id,
+        fileName: payload.fileName,
+        saveDirectory: dir.path,
+      );
+      if (file != null) {
+        downloadedFilePaths[payload.id] = file.path;
+        notifyListeners();
+      }
+    } catch (e) {
+      print('[AppState] Auto-download failed: $e');
+    }
+  }
+
+  Future<void> downloadPayload(SharePayload payload) async {
+    if (payload.senderIp == null || payload.senderPort == null) {
+      _setStatus('Cannot download: sender info missing');
+      return;
+    }
+    await _autoDownload(payload);
   }
 
   void _handleClientListUpdate(List<String> rawList) {
     final myName = deviceName;
     participants = rawList.map((name) {
       if (name == '$myName (Host)') return '$myName (Host, You)';
-      if (name == myName)            return '$myName (You)';
+      if (name == myName) return '$myName (You)';
       return name;
     }).toList();
     notifyListeners();
   }
 
-  /// Tries to auto-connect to any discovered host that is in the saved list.
   void _tryAutoConnect(List<DiscoveredDevice> devices) {
     final saved = Prefs.getAutoConnectHosts();
     if (saved.isEmpty) return;
@@ -160,7 +204,6 @@ class AppState extends ChangeNotifier {
     for (final device in devices) {
       for (final entry in saved) {
         if (device.ip == entry['ip'] && device.port == entry['port']) {
-          // Don't auto-connect to self
           if (device.ip == localIp && device.port == hostPort) continue;
           print('[AppState] Auto-connecting to ${device.name}');
           connectTo(device.ip, device.port);
@@ -174,14 +217,12 @@ class AppState extends ChangeNotifier {
     localIp = await NetworkService.getLocalIp();
     _discoveryService.setLocalIp(localIp);
 
-    // Start discovery early
     if (!kIsWeb) {
       _discoveryService.startDiscovery().catchError((e) {
         print('[AppState] Discovery start failed: $e');
       });
     }
 
-    // Load saved name or detect device model in background
     final savedName = Prefs.getDeviceName();
     if (savedName != null && savedName.isNotEmpty) {
       _deviceName = savedName;
@@ -208,7 +249,6 @@ class AppState extends ChangeNotifier {
 
     try {
       _setStatus('Starting server on port $hostPort...', persistent: true);
-
       final router = Router();
       _fileTransferService.setupRoutes(router);
       await _hostService.startServer(hostPort, deviceName, router);
@@ -245,12 +285,11 @@ class AppState extends ChangeNotifier {
     notifyListeners();
 
     if (!kIsWeb) {
-      try { await _discoveryService.stopHost(); }   catch (_) {}
-      try { await _hostService.stopServer(); }      catch (_) {}
+      try { await _discoveryService.stopHost(); } catch (_) {}
+      try { await _hostService.stopServer(); } catch (_) {}
       try { _fileTransferService.clearHostedFiles(); } catch (_) {}
     }
 
-    // Remove only self from discovered list, don't clear everything
     discoveredHosts.removeWhere((d) => d.ip == localIp && d.port == hostPort);
     isHosting        = false;
     connectionStatus = '';
@@ -288,7 +327,7 @@ class AppState extends ChangeNotifier {
 
       if (success) {
         _clientService.sendHandshake(deviceName);
-        connectedHostIp   = ip;
+        connectedHostIp = ip;
         connectedHostPort = port;
         _setStatus('Connected to $ip:$port', persistent: true);
       } else {
@@ -314,8 +353,8 @@ class AppState extends ChangeNotifier {
   Future<void> disconnectFromHost() async {
     if (!kIsWeb) _clientService.disconnect();
     isConnectedToHost = false;
-    connectedHostIp   = null;
-    connectionStatus  = '';
+    connectedHostIp = null;
+    connectionStatus = '';
     notifyListeners();
   }
 
@@ -323,11 +362,11 @@ class AppState extends ChangeNotifier {
     if (text.isEmpty) return;
 
     final payload = SharePayload(
-      id:         _uuid.v4(),
-      type:       FileTransferType.text,
-      fileName:   'Text Message',
-      size:       text.length,
-      data:       text,
+      id: _uuid.v4(),
+      type: FileTransferType.text,
+      fileName: 'Text Message',
+      size: text.length,
+      data: text,
       senderName: deviceName,
     );
 
@@ -348,15 +387,27 @@ class AppState extends ChangeNotifier {
     }
 
     final stat = await file.stat();
+    final ext = file.path
+        .split(io.Platform.pathSeparator)
+        .last
+        .toLowerCase()
+        .split('.')
+        .last;
+    final isImage = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'heic']
+        .contains(ext);
+
     final payload = SharePayload(
-      id:         _uuid.v4(),
-      type:       FileTransferType.file,
-      fileName:   file.path.split(io.Platform.pathSeparator).last,
-      size:       stat.size,
+      id: _uuid.v4(),
+      type: isImage ? FileTransferType.image : FileTransferType.file,
+      fileName: file.path.split(io.Platform.pathSeparator).last,
+      size: stat.size,
       senderName: deviceName,
+      senderIp: localIp,
+      senderPort: hostPort,
     );
 
     history.add(payload);
+    downloadedFilePaths[payload.id] = file.path;
     notifyListeners();
 
     _fileTransferService.hostFile(payload.id, file);
@@ -368,6 +419,17 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  Future<void> shareImageBytes(Uint8List bytes, String fileName) async {
+    if (kIsWeb) {
+      _setStatus('Image sharing not supported on Web Client');
+      return;
+    }
+    final dir = await getTemporaryDirectory();
+    final file = io.File('${dir.path}/$fileName');
+    await file.writeAsBytes(bytes);
+    await shareFile(file);
+  }
+
   Future<void> downloadLargeFile(
       String ip, int port, String id, String fileName) async {
     if (kIsWeb) {
@@ -377,15 +439,17 @@ class AppState extends ChangeNotifier {
 
     final dir = await getApplicationDocumentsDirectory();
     final downloadedFile = await _fileTransferService.downloadFile(
-      ip:            ip,
-      port:          port,
-      id:            id,
-      fileName:      fileName,
+      ip: ip,
+      port: port,
+      id: id,
+      fileName: fileName,
       saveDirectory: dir.path,
     );
 
     if (downloadedFile != null) {
+      downloadedFilePaths[id] = downloadedFile.path;
       _setStatus('Downloaded: ${downloadedFile.path}');
+      notifyListeners();
     } else {
       _setStatus('Download failed. Is the host still online?');
     }
@@ -393,7 +457,7 @@ class AppState extends ChangeNotifier {
 
   Future<String> _getDeviceModelName() async {
     if (kIsWeb) return 'Web User';
-    
+
     final deviceInfo = DeviceInfoPlugin();
     try {
       if (io.Platform.isAndroid) {
