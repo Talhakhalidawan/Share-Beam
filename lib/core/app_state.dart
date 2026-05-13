@@ -73,9 +73,28 @@ class AppState extends ChangeNotifier {
   String get deviceName => _deviceName;
 
   set deviceName(String name) {
-    _deviceName = name.trim();
+    _deviceName = _trimName(name);
     Prefs.setDeviceName(_deviceName);
     notifyListeners();
+  }
+
+  static String _trimName(String name) {
+    name = name.trim();
+    if (name.length <= 15) return name;
+
+    // Split into words
+    List<String> words = name.split(' ');
+    // Keep removing last word until it fits in 15 or only 1 word left
+    while (words.length > 1 && words.join(' ').length > 15) {
+      words.removeLast();
+    }
+
+    String result = words.join(' ');
+    // If even the first word is > 15, hard trim it
+    if (result.length > 15) {
+      result = result.substring(0, 15).trim();
+    }
+    return result;
   }
 
   AppState() {
@@ -225,11 +244,11 @@ class AppState extends ChangeNotifier {
 
     final savedName = Prefs.getDeviceName();
     if (savedName != null && savedName.isNotEmpty) {
-      _deviceName = savedName;
+      _deviceName = _trimName(savedName);
       notifyListeners();
     } else {
       _getDeviceModelName().then((model) {
-        _deviceName = model;
+        _deviceName = _trimName(model);
         Prefs.setDeviceName(_deviceName);
         notifyListeners();
       });
@@ -351,7 +370,13 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> disconnectFromHost() async {
-    if (!kIsWeb) _clientService.disconnect();
+    if (!kIsWeb) {
+      _clientService.disconnect();
+      if (!isHosting) {
+        await _hostService.stopServer();
+        _fileTransferService.clearHostedFiles();
+      }
+    }
     isConnectedToHost = false;
     connectedHostIp = null;
     connectionStatus = '';
@@ -380,11 +405,27 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  Future<void> _ensureServerRunning() async {
+    if (_hostService.isServerRunning) return;
+    try {
+      final router = Router();
+      _fileTransferService.setupRoutes(router);
+      // Even as a client, we start the host service server so we can serve files.
+      // We don't start discovery though.
+      await _hostService.startServer(hostPort, deviceName, router);
+      print('[AppState] Background file server started on $hostPort');
+    } catch (e) {
+      print('[AppState] Could not start background file server: $e');
+    }
+  }
+
   Future<void> shareFile(io.File file) async {
     if (kIsWeb) {
       _setStatus('File sharing not supported on Web Client');
       return;
     }
+
+    await _ensureServerRunning();
 
     final stat = await file.stat();
     final ext = file.path

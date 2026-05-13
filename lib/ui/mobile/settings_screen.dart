@@ -94,7 +94,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
             autofocus: true,
             textCapitalization: TextCapitalization.words,
             style: const TextStyle(color: _iosText),
+            maxLength: 15,
             decoration: InputDecoration(
+              counterText: '', // Hide the counter
               hintText: 'e.g. Talha\'s Phone',
               hintStyle: const TextStyle(color: _iosGray),
               filled: true,

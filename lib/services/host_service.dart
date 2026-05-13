@@ -12,6 +12,7 @@ import '../core/models.dart';
 
 class HostService {
   HttpServer? _server;
+  bool get isServerRunning => _server != null;
   final List<WebSocketChannel>        _clients     = [];
   final Map<WebSocketChannel, String> _clientNames = {};
   String? _hostName;

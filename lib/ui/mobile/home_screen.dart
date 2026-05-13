@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import 'package:pasteboard/pasteboard.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:path_provider/path_provider.dart';
 
 import '../../core/app_state.dart';
 import '../../core/models.dart';
@@ -367,6 +368,8 @@ class _HomeScreenState extends State<HomeScreen> {
     final localPath = appState.downloadedFilePaths[payload.id];
     final isDownloaded =
         localPath != null && io.File(localPath).existsSync();
+    final progress = appState.downloadsProgress[payload.id];
+    final isDownloading = progress != null && progress < 1.0;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -384,19 +387,24 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
           ),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(10),
-            child: isDownloaded
-                ? Image.file(
-                    io.File(localPath),
-                    width: 240,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) =>
-                        _buildImagePlaceholder(payload, appState),
-                  )
-                : _buildImagePlaceholder(payload, appState),
+        GestureDetector(
+          onTap: isDownloaded
+              ? () => _openFullScreenImage(context, localPath!)
+              : null,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: isDownloaded
+                  ? Image.file(
+                      io.File(localPath),
+                      width: 240,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) =>
+                          _buildImagePlaceholder(payload, appState, isDownloading, progress),
+                    )
+                  : _buildImagePlaceholder(payload, appState, isDownloading, progress),
+            ),
           ),
         ),
         Padding(
@@ -411,23 +419,25 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
               const Spacer(),
-              GestureDetector(
-                onTap: () => _copyImage(context, payload, appState),
-                child: Icon(
-                  Icons.copy,
-                  size: 16,
-                  color: AppTheme.textMuted.withOpacity(0.7),
+              if (isDownloaded && !isMe) ...[
+                GestureDetector(
+                  onTap: () => _copyImageToClipboard(payload, appState),
+                  child: Icon(
+                    Icons.copy,
+                    size: 16,
+                    color: AppTheme.textMuted.withOpacity(0.7),
+                  ),
                 ),
-              ),
-              const SizedBox(width: 12),
-              GestureDetector(
-                onTap: () => _downloadImage(context, payload, appState),
-                child: Icon(
-                  isDownloaded ? Icons.open_in_new : Icons.download,
-                  size: 16,
-                  color: AppTheme.textMuted.withOpacity(0.7),
+                const SizedBox(width: 12),
+                GestureDetector(
+                  onTap: () => _saveImageToLocalStorage(localPath!),
+                  child: Icon(
+                    Icons.save_alt,
+                    size: 16,
+                    color: AppTheme.accentColor,
+                  ),
                 ),
-              ),
+              ],
             ],
           ),
         ),
@@ -435,10 +445,8 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildImagePlaceholder(SharePayload payload, AppState appState) {
-    final progress = appState.downloadsProgress[payload.id];
-    final isDownloading = progress != null && progress < 1.0;
-
+  Widget _buildImagePlaceholder(SharePayload payload, AppState appState,
+      bool isDownloading, double? progress) {
     return Container(
       width: 240,
       height: 140,
@@ -470,6 +478,33 @@ class _HomeScreenState extends State<HomeScreen> {
                   value: progress,
                   backgroundColor: AppTheme.borderColor,
                   minHeight: 3,
+                ),
+              ),
+            ),
+          ] else if (payload.senderName != appState.deviceName) ...[
+            const SizedBox(height: 8),
+            GestureDetector(
+              onTap: () => _downloadImage(payload, appState),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                decoration: BoxDecoration(
+                  color: AppTheme.accentColor,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.download, color: Colors.white, size: 16),
+                    SizedBox(width: 6),
+                    Text(
+                      'Download',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -570,28 +605,24 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
               const Spacer(),
-              if (!isMe)
+              if (!isMe && !isDownloaded)
                 GestureDetector(
-                  onTap: () {
-                    Clipboard.setData(
-                        ClipboardData(text: payload.fileName));
-                    _showCopiedSnack();
-                  },
+                  onTap: () => _downloadFile(payload, appState),
                   child: Icon(
-                    Icons.copy,
+                    Icons.download,
                     size: 16,
-                    color: AppTheme.textMuted.withOpacity(0.7),
+                    color: AppTheme.accentColor,
                   ),
                 ),
-              if (!isMe) const SizedBox(width: 12),
-              GestureDetector(
-                onTap: () => _downloadImage(context, payload, appState),
-                child: Icon(
-                  isDownloaded ? Icons.open_in_new : Icons.download,
-                  size: 16,
-                  color: AppTheme.textMuted.withOpacity(0.7),
+              if (isDownloaded)
+                GestureDetector(
+                  onTap: () => _saveFileToLocalStorage(localPath!, payload.fileName),
+                  child: Icon(
+                    Icons.save_alt,
+                    size: 16,
+                    color: AppTheme.accentColor,
+                  ),
                 ),
-              ),
             ],
           ),
         ],
@@ -599,23 +630,173 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Future<void> _copyImage(BuildContext context, SharePayload payload,
-      AppState appState) async {
-    String? path = appState.downloadedFilePaths[payload.id];
-    if (path == null || !io.File(path).existsSync()) {
-      await appState.downloadPayload(payload);
-      path = appState.downloadedFilePaths[payload.id];
-    }
-    if (path != null) {
-      final bytes = await io.File(path).readAsBytes();
-      await Pasteboard.writeImage(bytes);
-      if (mounted) _showCopiedSnack();
+  void _openFullScreenImage(BuildContext context, String imagePath) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => Scaffold(
+          backgroundColor: Colors.black,
+          appBar: AppBar(
+            backgroundColor: Colors.black,
+            elevation: 0,
+            iconTheme: const IconThemeData(color: Colors.white),
+          ),
+          body: Center(
+            child: InteractiveViewer(
+              minScale: 0.5,
+              maxScale: 4.0,
+              child: Image.file(
+                io.File(imagePath),
+                fit: BoxFit.contain,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _copyImageToClipboard(SharePayload payload, AppState appState) async {
+    try {
+      String? path = appState.downloadedFilePaths[payload.id];
+      
+      if (path == null || !io.File(path).existsSync()) {
+        await appState.downloadPayload(payload);
+        path = appState.downloadedFilePaths[payload.id];
+      }
+      
+      if (path != null && io.File(path).existsSync()) {
+        final bytes = await io.File(path).readAsBytes();
+        await Pasteboard.writeImage(bytes);
+        if (mounted) _showCopiedSnack();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to copy: $e')),
+        );
+      }
     }
   }
 
-  Future<void> _downloadImage(BuildContext context, SharePayload payload,
-      AppState appState) async {
-    await appState.downloadPayload(payload);
+  Future<void> _downloadImage(SharePayload payload, AppState appState) async {
+    try {
+      await appState.downloadPayload(payload);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Download failed: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _downloadFile(SharePayload payload, AppState appState) async {
+    try {
+      await appState.downloadPayload(payload);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Download failed: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _saveImageToLocalStorage(String imagePath) async {
+    try {
+      final file = io.File(imagePath);
+      if (!await file.exists()) return;
+
+      final bytes = await file.readAsBytes();
+      
+      io.Directory? saveDir;
+      if (io.Platform.isAndroid) {
+        saveDir = io.Directory('/storage/emulated/0/Download');
+      } else if (io.Platform.isIOS) {
+        final docs = await getApplicationDocumentsDirectory();
+        saveDir = docs;
+      } else {
+        final home = io.Platform.environment['HOME'] ?? 
+                     io.Platform.environment['USERPROFILE'];
+        if (home != null) {
+          saveDir = io.Directory('$home/Downloads');
+          if (!await saveDir.exists()) {
+            saveDir = io.Directory('$home/Documents');
+          }
+        }
+      }
+
+      if (saveDir == null) {
+        throw Exception('Could not determine save location');
+      }
+
+      if (!await saveDir.exists()) {
+        await saveDir.create(recursive: true);
+      }
+
+      final fileName = 'sharebeam_${DateTime.now().millisecondsSinceEpoch}.png';
+      final savePath = '${saveDir.path}/$fileName';
+      await file.copy(savePath);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Saved to $savePath')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Save failed: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _saveFileToLocalStorage(String filePath, String originalName) async {
+    try {
+      final file = io.File(filePath);
+      if (!await file.exists()) return;
+
+      io.Directory? saveDir;
+      if (io.Platform.isAndroid) {
+        saveDir = io.Directory('/storage/emulated/0/Download');
+      } else if (io.Platform.isIOS) {
+        final docs = await getApplicationDocumentsDirectory();
+        saveDir = docs;
+      } else {
+        final home = io.Platform.environment['HOME'] ?? 
+                     io.Platform.environment['USERPROFILE'];
+        if (home != null) {
+          saveDir = io.Directory('$home/Downloads');
+          if (!await saveDir.exists()) {
+            saveDir = io.Directory('$home/Documents');
+          }
+        }
+      }
+
+      if (saveDir == null) {
+        throw Exception('Could not determine save location');
+      }
+
+      if (!await saveDir.exists()) {
+        await saveDir.create(recursive: true);
+      }
+
+      final savePath = '${saveDir.path}/$originalName';
+      await file.copy(savePath);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Saved to $savePath')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Save failed: $e')),
+        );
+      }
+    }
   }
 
   void _showCopiedSnack() {
@@ -711,7 +892,7 @@ class _HomeScreenState extends State<HomeScreen> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Smart Input Bar
+// Smart Input Bar - WhatsApp Style
 // ─────────────────────────────────────────────────────────────────────────────
 class SmartInputBar extends StatefulWidget {
   final bool enabled;
@@ -774,20 +955,34 @@ class _SmartInputBarState extends State<SmartInputBar> {
 
   void _pickFile({bool image = false}) async {
     try {
-      final result = await FilePicker.platform.pickFiles(
-        type: image ? FileType.image : FileType.any,
-        allowCompression: false,
-        allowMultiple: false,
-      );
-      if (result != null && result.files.single.path != null) {
-        await context
-            .read<AppState>()
-            .shareFile(io.File(result.files.single.path!));
+      FilePickerResult? result;
+      
+      if (io.Platform.isAndroid || io.Platform.isIOS) {
+        result = await FilePicker.platform.pickFiles(
+          type: image ? FileType.image : FileType.any,
+          allowCompression: false,
+          allowMultiple: false,
+        );
+      } else {
+        result = await FilePicker.platform.pickFiles(
+          type: image ? FileType.image : FileType.any,
+          allowMultiple: false,
+          withData: false,
+        );
+      }
+      
+      if (result != null && result.files.isNotEmpty) {
+        final path = result.files.single.path;
+        if (path != null) {
+          await context.read<AppState>().shareFile(io.File(path));
+        }
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to pick file: $e')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to pick file: $e')),
+        );
+      }
     }
   }
 
@@ -848,59 +1043,58 @@ class _SmartInputBarState extends State<SmartInputBar> {
                     ],
                   ),
                 ),
-              Row(
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.add_circle_outline,
-                        color: AppTheme.accentColor),
-                    onPressed: widget.enabled
-                        ? () => _showAttachmentSheet(context)
-                        : null,
-                  ),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: TextField(
-                      controller: _controller,
-                      enabled: widget.enabled,
-                      textCapitalization: TextCapitalization.sentences,
-                      decoration: InputDecoration(
-                        hintText: widget.enabled
-                            ? 'Type a message...'
-                            : 'Connect to send',
-                        filled: true,
-                        fillColor: AppTheme.bgColor,
-                        contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 12),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(24),
-                          borderSide: BorderSide.none,
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+                decoration: BoxDecoration(
+                  color: AppTheme.bgColor,
+                  borderRadius: BorderRadius.circular(24),
+                ),
+                child: Row(
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.add, color: AppTheme.textMuted),
+                      onPressed: widget.enabled
+                          ? () => _showAttachmentSheet(context)
+                          : null,
+                      splashRadius: 20,
+                    ),
+                    Expanded(
+                      child: TextField(
+                        controller: _controller,
+                        enabled: widget.enabled,
+                        textCapitalization: TextCapitalization.sentences,
+                        decoration: InputDecoration(
+                          hintText: widget.enabled
+                              ? 'Type a message...'
+                              : 'Connect to send',
+                          border: InputBorder.none,
+                          contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 4, vertical: 10),
+                          isDense: true,
                         ),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(24),
-                          borderSide: BorderSide.none,
+                        onSubmitted: (_) => _send(),
+                      ),
+                    ),
+                    GestureDetector(
+                      onTap: widget.enabled ? _send : null,
+                      child: Container(
+                        margin: const EdgeInsets.only(right: 4),
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: widget.enabled
+                              ? AppTheme.accentColor
+                              : AppTheme.textMuted.withOpacity(0.3),
+                          shape: BoxShape.circle,
                         ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(24),
-                          borderSide: const BorderSide(
-                              color: AppTheme.accentColor, width: 1),
+                        child: const Icon(
+                          Icons.send,
+                          color: Colors.white,
+                          size: 20,
                         ),
                       ),
-                      onSubmitted: (_) => _send(),
                     ),
-                  ),
-                  const SizedBox(width: 6),
-                  CircleAvatar(
-                    radius: 22,
-                    backgroundColor: widget.enabled
-                        ? AppTheme.accentColor
-                        : AppTheme.textMuted,
-                    child: IconButton(
-                      icon: const Icon(Icons.arrow_upward,
-                          color: Colors.white, size: 20),
-                      onPressed: widget.enabled ? _send : null,
-                    ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ],
           ),
