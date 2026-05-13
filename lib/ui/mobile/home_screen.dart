@@ -8,6 +8,9 @@ import 'package:pasteboard/pasteboard.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:file_selector/file_selector.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:gal/gal.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../../core/app_state.dart';
 import '../../core/models.dart';
@@ -708,22 +711,30 @@ class _HomeScreenState extends State<HomeScreen> {
       final file = io.File(imagePath);
       if (!await file.exists()) return;
 
+      if (io.Platform.isAndroid || io.Platform.isIOS) {
+        final hasAccess = await Gal.hasAccess();
+        if (!hasAccess) {
+          await Gal.requestAccess();
+        }
+        await Gal.putImage(imagePath);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Saved to Gallery')),
+          );
+        }
+        return;
+      }
+
+      // Rest of the logic for Desktop
       final bytes = await file.readAsBytes();
       
       io.Directory? saveDir;
-      if (io.Platform.isAndroid) {
-        saveDir = io.Directory('/storage/emulated/0/Download');
-      } else if (io.Platform.isIOS) {
-        final docs = await getApplicationDocumentsDirectory();
-        saveDir = docs;
-      } else {
-        final home = io.Platform.environment['HOME'] ?? 
-                     io.Platform.environment['USERPROFILE'];
-        if (home != null) {
-          saveDir = io.Directory('$home/Downloads');
-          if (!await saveDir.exists()) {
-            saveDir = io.Directory('$home/Documents');
-          }
+      final home = io.Platform.environment['HOME'] ?? 
+                   io.Platform.environment['USERPROFILE'];
+      if (home != null) {
+        saveDir = io.Directory('$home/Downloads');
+        if (!await saveDir.exists()) {
+          saveDir = io.Directory('$home/Documents');
         }
       }
 
@@ -758,20 +769,20 @@ class _HomeScreenState extends State<HomeScreen> {
       final file = io.File(filePath);
       if (!await file.exists()) return;
 
+      if (io.Platform.isAndroid || io.Platform.isIOS) {
+        // Use share_plus to allow user to save the file
+        // This is more reliable than manually copying to Downloads on modern mobile OS
+        await Share.shareXFiles([XFile(filePath, name: originalName)]);
+        return;
+      }
+
       io.Directory? saveDir;
-      if (io.Platform.isAndroid) {
-        saveDir = io.Directory('/storage/emulated/0/Download');
-      } else if (io.Platform.isIOS) {
-        final docs = await getApplicationDocumentsDirectory();
-        saveDir = docs;
-      } else {
-        final home = io.Platform.environment['HOME'] ?? 
-                     io.Platform.environment['USERPROFILE'];
-        if (home != null) {
-          saveDir = io.Directory('$home/Downloads');
-          if (!await saveDir.exists()) {
-            saveDir = io.Directory('$home/Documents');
-          }
+      final home = io.Platform.environment['HOME'] ?? 
+                   io.Platform.environment['USERPROFILE'];
+      if (home != null) {
+        saveDir = io.Directory('$home/Downloads');
+        if (!await saveDir.exists()) {
+          saveDir = io.Directory('$home/Documents');
         }
       }
 
@@ -907,8 +918,7 @@ class _SmartInputBarState extends State<SmartInputBar> {
   final TextEditingController _controller = TextEditingController();
   Uint8List? _pendingImageBytes;
   String? _pendingImageName;
-
-  Future<void> _handlePaste() async {
+  Future<bool> _handlePaste() async {
     try {
       final bytes = await Pasteboard.image;
       if (bytes != null && bytes.isNotEmpty && _pendingImageBytes == null) {
@@ -917,7 +927,7 @@ class _SmartInputBarState extends State<SmartInputBar> {
           _pendingImageName =
               'image_${DateTime.now().millisecondsSinceEpoch}.png';
         });
-        return;
+        return true; // Successfully pasted image
       }
     } catch (_) {}
 
@@ -932,8 +942,10 @@ class _SmartInputBarState extends State<SmartInputBar> {
           selection:
               TextSelection.collapsed(offset: selection.start + text.length),
         );
+        return true;
       }
     } catch (_) {}
+    return false;
   }
 
   void _send() async {
@@ -1067,6 +1079,17 @@ class _SmartInputBarState extends State<SmartInputBar> {
                         controller: _controller,
                         enabled: widget.enabled,
                         textCapitalization: TextCapitalization.sentences,
+                        contentInsertionConfiguration: ContentInsertionConfiguration(
+                          onContentInserted: (content) {
+                            if (content.data != null) {
+                              setState(() {
+                                _pendingImageBytes = content.data;
+                                _pendingImageName =
+                                    'image_${DateTime.now().millisecondsSinceEpoch}.${content.mimeType.split('/').last}';
+                              });
+                            }
+                          },
+                        ),
                         decoration: InputDecoration(
                           hintText: widget.enabled
                               ? 'Type a message...'
@@ -1152,6 +1175,23 @@ class _SmartInputBarState extends State<SmartInputBar> {
                   onTap: () {
                     Navigator.pop(ctx);
                     _pickFile(image: false);
+                  },
+                ),
+                ListTile(
+                  leading: CircleAvatar(
+                    backgroundColor: AppTheme.accentColor.withOpacity(0.1),
+                    child: const Icon(Icons.paste,
+                        color: AppTheme.accentColor),
+                  ),
+                  title: const Text('Paste from Clipboard'),
+                  onTap: () async {
+                    Navigator.pop(ctx);
+                    final success = await _handlePaste();
+                    if (!success && mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Nothing found to paste')),
+                      );
+                    }
                   },
                 ),
                 const SizedBox(height: 8),
