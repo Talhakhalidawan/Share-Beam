@@ -58,12 +58,40 @@ class AppState extends ChangeNotifier {
   Map<String, double>    downloadsProgress = {};
   List<String>           participants      = [];
 
-  // ── Download tracking ────────────────────────────────────────────────────
   Map<String, String> downloadedFilePaths = {};
 
-  // ── Auto-download settings (tweak these anytime) ─────────────────────────
-  bool autoDownloadImages        = true;
-  int  autoDownloadSizeThreshold = 1048576; // 1 MB
+  // ── Auto-download settings ──────────────────────────────────────────────
+  bool _autoDownloadEnabled = true;
+  bool get autoDownloadEnabled => _autoDownloadEnabled;
+  set autoDownloadEnabled(bool value) {
+    _autoDownloadEnabled = value;
+    Prefs.setAutoDownloadEnabled(value);
+    notifyListeners();
+  }
+
+  List<String> _autoDownloadTypes = ['image'];
+  List<String> get autoDownloadTypes => _autoDownloadTypes;
+  set autoDownloadTypes(List<String> value) {
+    _autoDownloadTypes = value;
+    Prefs.setAutoDownloadTypes(value);
+    notifyListeners();
+  }
+
+  int _autoDownloadMaxSize = 1; // in MB, 101 = unlimited
+  int get autoDownloadMaxSize => _autoDownloadMaxSize;
+  set autoDownloadMaxSize(int value) {
+    _autoDownloadMaxSize = value;
+    Prefs.setAutoDownloadMaxSize(value);
+    notifyListeners();
+  }
+
+  String _getFileCategory(String fileName) {
+    final ext = fileName.split('.').last.toLowerCase();
+    if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'heic'].contains(ext)) return 'image';
+    if (['mp4', 'mov', 'avi', 'mkv', 'flv', 'wmv'].contains(ext)) return 'video';
+    if (['pdf', 'doc', 'docx', 'txt', 'ppt', 'pptx', 'xls', 'xlsx', 'csv'].contains(ext)) return 'document';
+    return 'other';
+  }
 
   final StreamController<AppNotification> _notificationController =
       StreamController<AppNotification>.broadcast();
@@ -110,6 +138,9 @@ class AppState extends ChangeNotifier {
 
   AppState() {
     _downloadPath = Prefs.getDownloadPath();
+    _autoDownloadEnabled = Prefs.getAutoDownloadEnabled();
+    _autoDownloadTypes = Prefs.getAutoDownloadTypes();
+    _autoDownloadMaxSize = Prefs.getAutoDownloadMaxSize();
     _initNetwork();
 
     _discoveryService.devicesStream.listen((devices) {
@@ -212,11 +243,18 @@ class AppState extends ChangeNotifier {
       notifyListeners();
 
       if (payload.senderIp != null && payload.senderPort != null) {
-        final shouldAuto = (payload.type == FileTransferType.image ||
-                payload.type == FileTransferType.file) &&
-            autoDownloadImages &&
-            payload.size <= autoDownloadSizeThreshold;
-        if (shouldAuto) _autoDownload(payload);
+        if (_autoDownloadEnabled) {
+          final category = _getFileCategory(payload.fileName);
+          final isTypeEnabled = _autoDownloadTypes.contains(category);
+          final isWithinSize = _autoDownloadMaxSize >= 101 || // 101 means unlimited
+              payload.size <= (_autoDownloadMaxSize * 1024 * 1024);
+
+          if ((payload.type == FileTransferType.image || payload.type == FileTransferType.file) &&
+              isTypeEnabled &&
+              isWithinSize) {
+            _autoDownload(payload);
+          }
+        }
       }
     }
   }

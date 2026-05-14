@@ -856,52 +856,228 @@ class GeneralSettingsPage extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const SizedBox(height: 16),
-            const Text(
-              'STORAGE',
-              style: TextStyle(
-                fontSize: 13, fontWeight: FontWeight.w600,
-                color: _iosGray, letterSpacing: 1,
-              ),
-            ),
-            const SizedBox(height: 8),
+            _buildSectionHeader('STORAGE'),
             _buildCard(
-              child: Material(
-                color: Colors.transparent,
-                borderRadius: BorderRadius.circular(12),
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(12),
-                  onTap: () => _pickDownloadFolder(context, appState),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            const Text(
-                              'Download Path',
-                              style: TextStyle(
-                                fontSize: 16, fontWeight: FontWeight.w500, color: _iosText,
-                              ),
-                            ),
-                            const Icon(CupertinoIcons.folder_open, color: _iosBlue, size: 22),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          appState.downloadPath ?? 'System Default (Downloads)',
-                          style: const TextStyle(fontSize: 14, color: _iosGray),
-                        ),
-                      ],
-                    ),
+              child: _buildPathPicker(context, appState),
+            ),
+            const SizedBox(height: 24),
+            _buildSectionHeader('AUTOMATIC DOWNLOADS'),
+            _buildCard(
+              child: Column(
+                children: [
+                  _buildToggleTile(
+                    'Auto-Download',
+                    appState.autoDownloadEnabled,
+                    (v) => appState.autoDownloadEnabled = v,
                   ),
-                ),
+                  if (appState.autoDownloadEnabled) ...[
+                    _buildDivider(),
+                    _buildTypesSelector(appState),
+                    _buildDivider(),
+                    _buildSizeSlider(appState),
+                  ],
+                ],
               ),
             ),
+            const SizedBox(height: 32),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildSectionHeader(String title) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Text(
+        title,
+        style: const TextStyle(
+          fontSize: 13, fontWeight: FontWeight.w600,
+          color: _iosGray, letterSpacing: 1,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPathPicker(BuildContext context, AppState appState) {
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () => _pickDownloadFolder(context, appState),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    'Download Path',
+                    style: TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.w500, color: _iosText,
+                    ),
+                  ),
+                  const Icon(CupertinoIcons.folder_open, color: _iosBlue, size: 22),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                appState.downloadPath ?? 'System Default (Downloads)',
+                style: const TextStyle(fontSize: 14, color: _iosGray),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildToggleTile(String title, bool value, ValueChanged<bool> onChanged) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500, color: _iosText),
+          ),
+          CupertinoSwitch(
+            value: value,
+            activeColor: _iosBlue,
+            onChanged: onChanged,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTypesSelector(AppState appState) {
+    final types = [
+      {'id': 'image', 'label': 'Images', 'icon': CupertinoIcons.photo},
+      {'id': 'video', 'label': 'Videos', 'icon': CupertinoIcons.play_circle},
+      {'id': 'document', 'label': 'Documents', 'icon': CupertinoIcons.doc_text},
+      {'id': 'other', 'label': 'Others', 'icon': CupertinoIcons.square_grid_2x2},
+    ];
+
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Media Types',
+            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: _iosGray),
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: types.map((type) {
+              final isSelected = appState.autoDownloadTypes.contains(type['id']);
+              return GestureDetector(
+                onTap: () {
+                  final current = List<String>.from(appState.autoDownloadTypes);
+                  if (isSelected) {
+                    current.remove(type['id']);
+                  } else {
+                    current.add(type['id'] as String);
+                  }
+                  appState.autoDownloadTypes = current;
+                },
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: isSelected ? _iosBlue : _iosBg,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: isSelected ? _iosBlue : _iosBorder,
+                      width: 1,
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        type['icon'] as IconData,
+                        size: 16,
+                        color: isSelected ? Colors.white : _iosGray,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        type['label'] as String,
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
+                          color: isSelected ? Colors.white : _iosText,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSizeSlider(AppState appState) {
+    final value = appState.autoDownloadMaxSize.toDouble();
+    final isUnlimited = value >= 101;
+
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'Max File Size',
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: _iosGray),
+              ),
+              Text(
+                isUnlimited ? 'Unlimited' : '${value.toInt()} MB',
+                style: const TextStyle(
+                  fontSize: 14, fontWeight: FontWeight.w600, color: _iosBlue,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: CupertinoSlider(
+              value: value,
+              min: 1,
+              max: 101,
+              divisions: 100,
+              activeColor: _iosBlue,
+              onChanged: (v) => appState.autoDownloadMaxSize = v.round(),
+            ),
+          ),
+          Text(
+            isUnlimited 
+              ? 'All files will be downloaded automatically.' 
+              : 'Only files smaller than ${value.toInt()} MB will be downloaded.',
+            style: const TextStyle(fontSize: 12, color: _iosGray),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDivider() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Container(height: 0.5, color: _iosBorder),
     );
   }
 

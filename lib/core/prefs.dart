@@ -62,4 +62,29 @@ class Prefs {
   static Future<bool> setDownloadPath(String path) async {
     return _i.setString('download_path', path);
   }
+
+  // ── Auto-Download Settings ────────────────────────────────────────────────
+  static bool getAutoDownloadEnabled() {
+    return _i.getBool('auto_download_enabled') ?? true;
+  }
+
+  static Future<bool> setAutoDownloadEnabled(bool value) async {
+    return _i.setBool('auto_download_enabled', value);
+  }
+
+  static List<String> getAutoDownloadTypes() {
+    return _i.getStringList('auto_download_types') ?? ['image'];
+  }
+
+  static Future<bool> setAutoDownloadTypes(List<String> types) async {
+    return _i.setStringList('auto_download_types', types);
+  }
+
+  static int getAutoDownloadMaxSize() {
+    return _i.getInt('auto_download_max_size') ?? 1; // Default 1 MB
+  }
+
+  static Future<bool> setAutoDownloadMaxSize(int value) async {
+    return _i.setInt('auto_download_max_size', value);
+  }
 }

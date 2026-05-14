@@ -42,13 +42,25 @@ class FileTransferService {
   }) async {
     final url = Uri.parse('http://$ip:$port/download/$id');
     final httpClient = HttpClient();
+    // Increase timeout for large files or slow networks
+    httpClient.connectionTimeout = const Duration(seconds: 15);
+
+    final dir = Directory(saveDirectory);
+    try {
+      if (!await dir.exists()) {
+        await dir.create(recursive: true);
+      }
+    } catch (e) {
+      print('[FileTransferService] Failed to create directory: $e');
+      return null;
+    }
 
     final tempPath = '$saveDirectory/$fileName.tmp';
     final finalPath = '$saveDirectory/$fileName';
 
     try {
       final request = await httpClient.getUrl(url);
-      final response = await request.close();
+      final response = await request.close().timeout(const Duration(seconds: 30));
 
       if (response.statusCode == 200) {
         final contentLength = response.contentLength;
@@ -56,21 +68,31 @@ class FileTransferService {
         final sink = tempFile.openWrite();
 
         int receivedBytes = 0;
-        await for (final chunk in response) {
-          sink.add(chunk);
-          receivedBytes += chunk.length;
-          if (contentLength > 0) {
-            _progressController.add({id: receivedBytes / contentLength});
+        try {
+          await for (final chunk in response) {
+            sink.add(chunk);
+            receivedBytes += chunk.length;
+            if (contentLength > 0) {
+              _progressController.add({id: receivedBytes / contentLength});
+            }
           }
+        } finally {
+          await sink.close();
         }
-        await sink.close();
+
         _progressController.add({id: 1.0});
 
         // Atomic rename on success
         final finalFile = File(finalPath);
-        if (await finalFile.exists()) await finalFile.delete();
+        if (await finalFile.exists()) {
+          try {
+            await finalFile.delete();
+          } catch (_) {}
+        }
         await tempFile.rename(finalPath);
         return finalFile;
+      } else {
+        print('[FileTransferService] Server returned status: ${response.statusCode}');
       }
     } catch (e) {
       print('[FileTransferService] Download error: $e');
