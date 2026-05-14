@@ -1,9 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:file_selector/file_selector.dart' as selector;
+import 'dart:io' as io;
 
 import '../../core/app_state.dart';
 import '../../core/prefs.dart';
+import '../shared/theme.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({Key? key}) : super(key: key);
@@ -13,7 +18,54 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  final TextEditingController _ipController = TextEditingController();
+  int _currentIndex = 0;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFFF2F2F7),
+      body: IndexedStack(
+        index: _currentIndex,
+        children: const [
+          ServerSettingsPage(),
+          GeneralSettingsPage(),
+        ],
+      ),
+      bottomNavigationBar: CupertinoTabBar(
+        currentIndex: _currentIndex,
+        onTap: (index) => setState(() => _currentIndex = index),
+        backgroundColor: Colors.white.withOpacity(0.94),
+        activeColor: const Color(0xFF007AFF),
+        inactiveColor: const Color(0xFF8E8E93),
+        border: const Border(
+          top: BorderSide(
+            color: Color(0xFFE5E5EA),
+            width: 0.5,
+          ),
+        ),
+        items: const [
+          BottomNavigationBarItem(
+            icon: Icon(CupertinoIcons.antenna_radiowaves_left_right),
+            label: 'Server',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(CupertinoIcons.settings),
+            label: 'General',
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class ServerSettingsPage extends StatefulWidget {
+  const ServerSettingsPage({Key? key}) : super(key: key);
+
+  @override
+  State<ServerSettingsPage> createState() => _ServerSettingsPageState();
+}
+
+class _ServerSettingsPageState extends State<ServerSettingsPage> {
   final TextEditingController _portController = TextEditingController();
 
   static const Color _iosBg = Color(0xFFF2F2F7);
@@ -33,14 +85,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   @override
   void dispose() {
-    _ipController.dispose();
     _portController.dispose();
     super.dispose();
   }
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // DIALOGS
-  // ═══════════════════════════════════════════════════════════════════════════
 
   Widget _iosDialog({
     required String title,
@@ -50,10 +97,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return Dialog(
       backgroundColor: _iosCardBg,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      // Match settings page body margin (20) minus a tiny bit so dialog feels native
       insetPadding: const EdgeInsets.symmetric(horizontal: 16),
       child: Padding(
-        // Reduced horizontal padding so content aligns with settings cards
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -96,7 +141,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             style: const TextStyle(color: _iosText),
             maxLength: 15,
             decoration: InputDecoration(
-              counterText: '', // Hide the counter
+              counterText: '',
               hintText: 'e.g. Talha\'s Phone',
               hintStyle: const TextStyle(color: _iosGray),
               filled: true,
@@ -113,8 +158,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 borderRadius: BorderRadius.circular(10),
                 borderSide: const BorderSide(color: _iosBlue),
               ),
-              contentPadding:
-                  const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
             ),
           ),
           const SizedBox(height: 24),
@@ -148,9 +192,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   void _showHostDialog(AppState appState) {
-    final controller =
-        TextEditingController(text: appState.hostPort.toString());
-
+    final controller = TextEditingController(text: appState.hostPort.toString());
     showDialog(
       context: context,
       barrierDismissible: true,
@@ -182,8 +224,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     borderRadius: BorderRadius.circular(10),
                     borderSide: const BorderSide(color: _iosBlue),
                   ),
-                  contentPadding:
-                      const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
                 ),
               ),
               const SizedBox(height: 12),
@@ -225,7 +266,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void _showJoinDialog(AppState appState) {
     final controller = TextEditingController();
     bool connectAuto = false;
-
     showDialog(
       context: context,
       barrierDismissible: true,
@@ -255,8 +295,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     borderRadius: BorderRadius.circular(10),
                     borderSide: const BorderSide(color: _iosBlue),
                   ),
-                  contentPadding:
-                      const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
                 ),
               ),
               const SizedBox(height: 4),
@@ -300,7 +339,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           final input = controller.text.trim();
                           Navigator.of(context).pop();
                           if (input.isEmpty) return;
-
                           String ip = input;
                           int port = appState.hostPort;
                           if (input.contains(':')) {
@@ -309,11 +347,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             final p = int.tryParse(parts[1]);
                             if (p != null) port = p;
                           }
-
                           if (connectAuto) {
                             await Prefs.addAutoConnectHost(ip, port, 'Manual');
                           }
-
                           appState.connectTo(ip, port);
                         },
                   child: const Text(
@@ -367,8 +403,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           child: Row(
             children: [
               IconButton(
-                icon: const Icon(Icons.chevron_left,
-                    color: _iosBlue, size: 28),
+                icon: const Icon(Icons.chevron_left, color: _iosBlue, size: 28),
                 onPressed: () => Navigator.pop(context),
               ),
               const Text(
@@ -464,7 +499,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-
   Widget _buildAvailableHosts(AppState appState) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -503,7 +537,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 trailing: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text(
+                    const Text(
                       'Enter address',
                       style: TextStyle(fontSize: 16, color: _iosGray),
                     ),
@@ -743,6 +777,162 @@ class _SettingsScreenState extends State<SettingsScreen> {
           child: content,
         ),
       ),
+    );
+  }
+}
+
+class GeneralSettingsPage extends StatelessWidget {
+  const GeneralSettingsPage({Key? key}) : super(key: key);
+
+  static const Color _iosBg = Color(0xFFF2F2F7);
+  static const Color _iosCardBg = Colors.white;
+  static const Color _iosBlue = Color(0xFF007AFF);
+  static const Color _iosGray = Color(0xFF8E8E93);
+  static const Color _iosBorder = Color(0xFFE5E5EA);
+  static const Color _iosText = Colors.black;
+
+  Future<void> _pickDownloadFolder(BuildContext context, AppState appState) async {
+    try {
+      String? result;
+      if (io.Platform.isAndroid || io.Platform.isIOS) {
+        result = await FilePicker.platform.getDirectoryPath();
+      } else {
+        result = await selector.getDirectoryPath();
+      }
+
+      if (result != null) {
+        appState.downloadPath = result;
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to pick folder: $e')),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final appState = context.watch<AppState>();
+
+    return Scaffold(
+      backgroundColor: _iosBg,
+      appBar: AppBar(
+        backgroundColor: _iosBg,
+        elevation: 0,
+        automaticallyImplyLeading: false,
+        centerTitle: false,
+        titleSpacing: 0,
+        title: Padding(
+          padding: const EdgeInsets.only(left: 8),
+          child: Row(
+            children: [
+              IconButton(
+                icon: const Icon(Icons.chevron_left, color: _iosBlue, size: 28),
+                onPressed: () => Navigator.pop(context),
+              ),
+              const Text(
+                'General Settings',
+                style: TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w600,
+                  color: _iosText,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.symmetric(horizontal: 20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SizedBox(height: 16),
+            const Text(
+              'STORAGE',
+              style: TextStyle(
+                fontSize: 13, fontWeight: FontWeight.w600,
+                color: _iosGray, letterSpacing: 1,
+              ),
+            ),
+            const SizedBox(height: 8),
+            _buildCard(
+              child: Material(
+                color: Colors.transparent,
+                borderRadius: BorderRadius.circular(12),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(12),
+                  onTap: () => _pickDownloadFolder(context, appState),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text(
+                              'Download Path',
+                              style: TextStyle(
+                                fontSize: 16, fontWeight: FontWeight.w500, color: _iosText,
+                              ),
+                            ),
+                            const Icon(CupertinoIcons.folder_open, color: _iosBlue, size: 22),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          appState.downloadPath ?? 'System Default (Downloads)',
+                          style: const TextStyle(fontSize: 14, color: _iosGray),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCard({required Widget child}) {
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: _iosCardBg,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: child,
+    );
+  }
+}
+xtButton.icon(
+                onPressed: () => appState.downloadPath = null,
+                icon: const Icon(CupertinoIcons.refresh_thin, size: 16, color: _iosBlue),
+                label: const Text(
+                  'Reset to default',
+                  style: TextStyle(color: _iosBlue, fontSize: 14),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCard({required Widget child}) {
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: _iosCardBg,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: child,
     );
   }
 }
