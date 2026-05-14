@@ -45,11 +45,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
         items: const [
           BottomNavigationBarItem(
-            icon: Icon(CupertinoIcons.antenna_radiowaves_left_right),
+            icon: Padding(
+              padding: EdgeInsets.only(top: 6),
+              child: Icon(CupertinoIcons.antenna_radiowaves_left_right),
+            ),
             label: 'Server',
           ),
           BottomNavigationBarItem(
-            icon: Icon(CupertinoIcons.settings),
+            icon: Padding(
+              padding: EdgeInsets.only(top: 6),
+              child: Icon(CupertinoIcons.settings),
+            ),
             label: 'General',
           ),
         ],
@@ -893,32 +899,6 @@ class GeneralSettingsPage extends StatelessWidget {
                 ),
               ),
             ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildCard({required Widget child}) {
-    return Container(
-      width: double.infinity,
-      decoration: BoxDecoration(
-        color: _iosCardBg,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: child,
-    );
-  }
-}
-xtButton.icon(
-                onPressed: () => appState.downloadPath = null,
-                icon: const Icon(CupertinoIcons.refresh_thin, size: 16, color: _iosBlue),
-                label: const Text(
-                  'Reset to default',
-                  style: TextStyle(color: _iosBlue, fontSize: 14),
-                ),
-              ),
-            ],
           ],
         ),
       ),

@@ -97,7 +97,19 @@ class AppState extends ChangeNotifier {
     return result;
   }
 
+  String? _downloadPath;
+  String? get downloadPath => _downloadPath;
+
+  set downloadPath(String? path) {
+    _downloadPath = path;
+    if (path != null) {
+      Prefs.setDownloadPath(path);
+    }
+    notifyListeners();
+  }
+
   AppState() {
+    _downloadPath = Prefs.getDownloadPath();
     _initNetwork();
 
     _discoveryService.devicesStream.listen((devices) {
@@ -211,6 +223,13 @@ class AppState extends ChangeNotifier {
 
   Future<String> _getDownloadDir() async {
     if (kIsWeb) return '';
+
+    if (_downloadPath != null) {
+      final dir = io.Directory(_downloadPath!);
+      if (await dir.exists()) {
+        return _downloadPath!;
+      }
+    }
     
     // Try system downloads directory (works on Desktop)
     try {

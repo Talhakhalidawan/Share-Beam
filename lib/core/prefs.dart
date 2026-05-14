@@ -53,4 +53,13 @@ class Prefs {
   static Future<bool> clearAutoConnectHosts() async {
     return _i.remove('auto_connect_hosts');
   }
+
+  // ── Download Path ────────────────────────────────────────────────────────
+  static String? getDownloadPath() {
+    return _i.getString('download_path');
+  }
+
+  static Future<bool> setDownloadPath(String path) async {
+    return _i.setString('download_path', path);
+  }
 }
