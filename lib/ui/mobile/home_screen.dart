@@ -30,6 +30,7 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   final ScrollController _scrollController = ScrollController();
   int _previousHistoryLength = 0;
+  final Set<String> _expandedTextIds = {};
 
   @override
   void initState() {
@@ -231,22 +232,29 @@ class _HomeScreenState extends State<HomeScreen> {
         isMe ? const Color(0xFFDCF8C6) : AppTheme.surfaceColor;
     final borderRadius = BorderRadius.circular(16);
 
+    final maxBubbleWidth = MediaQuery.of(context).size.width * 0.82;
+    final isText = payload.type == FileTransferType.text;
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 4),
       child: Column(
         crossAxisAlignment: alignment,
         children: [
           Row(
-            mainAxisAlignment:
-                isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
+            mainAxisAlignment: isText
+                ? MainAxisAlignment.start
+                : (isMe ? MainAxisAlignment.end : MainAxisAlignment.start),
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              if (isMe) const Spacer(),
+              if (isMe)
+                isText
+                    ? const Expanded(flex: 1, child: SizedBox.shrink())
+                    : const Spacer(),
               Flexible(
+                flex: isText ? 4 : 1,
+                fit: FlexFit.loose,
                 child: Container(
-                  constraints: BoxConstraints(
-                    maxWidth: MediaQuery.of(context).size.width * 0.8,
-                  ),
+                  constraints: BoxConstraints(maxWidth: maxBubbleWidth),
                   decoration: BoxDecoration(
                     color: bubbleColor,
                     borderRadius: borderRadius,
@@ -262,7 +270,10 @@ class _HomeScreenState extends State<HomeScreen> {
                       context, payload, appState, showSender, isMe),
                 ),
               ),
-              if (!isMe) const Spacer(),
+              if (!isMe)
+                isText
+                    ? const Expanded(flex: 1, child: SizedBox.shrink())
+                    : const Spacer(),
             ],
           ),
         ],
@@ -298,32 +309,86 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildTextContent(SharePayload payload, bool showSender, bool isMe) {
     final time = DateFormat('HH:mm').format(payload.timestamp);
+    const int maxLines = 6;
+    final bool isExpanded = _expandedTextIds.contains(payload.id);
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-      child: IntrinsicWidth(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (showSender)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 4),
-                child: Text(
-                  payload.senderName,
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: UserColorGenerator.forName(payload.senderName),
-                  ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (showSender)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Text(
+                payload.senderName,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: UserColorGenerator.forName(payload.senderName),
                 ),
               ),
-            SelectableText(
-              payload.data ?? '',
-              style: const TextStyle(fontSize: 15, color: AppTheme.textMain),
             ),
-            const SizedBox(height: 2),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final text = payload.data ?? '';
+              final approxCharsPerLine = (constraints.maxWidth / 7.8).floor();
+              final threshold = approxCharsPerLine * maxLines;
+              final bool exceeds = text.length > threshold;
+
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (isExpanded)
+                    SelectableText(
+                      text,
+                      style: const TextStyle(
+                          fontSize: 15, color: AppTheme.textMain),
+                    )
+                  else
+                    Text(
+                      text,
+                      style: const TextStyle(
+                          fontSize: 15, color: AppTheme.textMain),
+                      maxLines: maxLines,
+                      overflow: TextOverflow.ellipsis,
+                      softWrap: true,
+                    ),
+                  if (exceeds)
+                    GestureDetector(
+                      onTap: () {
+                        setState(() {
+                          if (isExpanded) {
+                            _expandedTextIds.remove(payload.id);
+                          } else {
+                            _expandedTextIds.add(payload.id);
+                          }
+                        });
+                      },
+                      child: Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Text(
+                          isExpanded ? 'Show less' : 'Read more',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: isExpanded
+                                ? AppTheme.textMuted
+                                : AppTheme.accentColor,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              );
+            },
+          ),
+          const SizedBox(height: 4),
+          Align(
+            alignment: Alignment.bottomRight,
+            child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
                 if (!isMe) ...[
@@ -350,8 +415,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -365,108 +430,112 @@ class _HomeScreenState extends State<HomeScreen> {
     final progress = appState.downloadsProgress[payload.id];
     final isDownloading = progress != null && progress < 1.0;
     final innerRadius = BorderRadius.circular(12);
+    
+    final maxMediaWidth = MediaQuery.of(context).size.width * 0.75;
 
     return Padding(
       padding: const EdgeInsets.all(4),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (showSender)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(6, 4, 6, 6),
-              child: Text(
-                payload.senderName,
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: UserColorGenerator.forName(payload.senderName),
+      child: IntrinsicWidth(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (showSender)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(6, 4, 6, 6),
+                child: Text(
+                  payload.senderName,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: UserColorGenerator.forName(payload.senderName),
+                  ),
                 ),
               ),
-            ),
-          GestureDetector(
-            onTap: isDownloaded
-                ? () => _openFullScreenImage(context, localPath!)
-                : null,
-            child: ClipRRect(
-              borderRadius: innerRadius,
-              child: Stack(
-                alignment: Alignment.center,
-                children: [
-                  isDownloaded
-                    ? ClipRRect(
-                        borderRadius: innerRadius,
-                        child: Container(
-                          width: 260, // always fill the bubble width
-                          constraints: const BoxConstraints(
-                            minHeight: 140, // not too small
-                            maxHeight: 320, // not too tall
+            GestureDetector(
+              onTap: isDownloaded
+                  ? () => _openFullScreenImage(context, localPath!)
+                  : null,
+              child: ClipRRect(
+                borderRadius: innerRadius,
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    isDownloaded
+                      ? ConstrainedBox(
+                          constraints: BoxConstraints(
+                            maxWidth: maxMediaWidth,
+                            minWidth: 160,
+                            minHeight: 140,
+                            maxHeight: 320,
                           ),
                           child: Image.file(
                             io.File(localPath),
-                            fit: BoxFit.cover,          // fills width, crops top/bottom if tall
-                            alignment: Alignment.center, // shows middle part
-                            width: 260,
+                            fit: BoxFit.cover,
+                            alignment: Alignment.center,
                           ),
-                        ),
-                      )
-                      : _buildImagePlaceholder(payload, appState, isDownloading, progress, isMe, isDownloaded),
+                        )
+                        : _buildImagePlaceholder(payload, appState, isDownloading, progress, isMe, isDownloaded, maxMediaWidth),
+                  ],
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(4, 6, 4, 2),
+              child: Row(
+                children: [
+                  if (isDownloaded && !isMe) ...[
+                    Text(
+                      time,
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: AppTheme.textMuted.withOpacity(0.8),
+                      ),
+                    ),
+                    const Spacer(),
+                    GestureDetector(
+                      onTap: () => _copyImageToClipboard(payload, appState),
+                      child: const Icon(
+                        Icons.copy,
+                        size: 16,
+                        color: AppTheme.textMuted,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    GestureDetector(
+                      onTap: () => _saveImageToLocalStorage(localPath!),
+                      child: const Icon(
+                        Icons.save_alt,
+                        size: 16,
+                        color: AppTheme.textMuted,
+                      ),
+                    ),
+                  ] else ...[
+                    const Spacer(),
+                    Text(
+                      time,
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: AppTheme.textMuted.withOpacity(0.8),
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(4, 6, 4, 2),
-            child: Row(
-              children: [
-                if (isDownloaded && !isMe) ...[
-                  Text(
-                    time,
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: AppTheme.textMuted.withOpacity(0.8),
-                    ),
-                  ),
-                  const Spacer(),
-                  GestureDetector(
-                    onTap: () => _copyImageToClipboard(payload, appState),
-                    child: const Icon(
-                      Icons.copy,
-                      size: 16,
-                      color: AppTheme.textMuted,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  GestureDetector(
-                    onTap: () => _saveImageToLocalStorage(localPath!),
-                    child: const Icon(
-                      Icons.save_alt,
-                      size: 16,
-                      color: AppTheme.textMuted,
-                    ),
-                  ),
-                ] else ...[
-                  const Spacer(),
-                  Text(
-                    time,
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: AppTheme.textMuted.withOpacity(0.8),
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
 
   Widget _buildImagePlaceholder(SharePayload payload, AppState appState,
-      bool isDownloading, double? progress, bool isMe, bool isDownloaded) {
+      bool isDownloading, double? progress, bool isMe, bool isDownloaded, double maxWidth) {
     return Container(
-      width: 260,
+      constraints: BoxConstraints(
+        maxWidth: maxWidth,
+        minWidth: 160,
+      ),
       height: 260,
       color: const Color(0xFF1E293B),
       child: Center(
@@ -515,75 +584,79 @@ class _HomeScreenState extends State<HomeScreen> {
     final progress = appState.downloadsProgress[payload.id];
     final isDownloading = progress != null && progress < 1.0;
     final innerRadius = BorderRadius.circular(12);
+    
+    final maxMediaWidth = MediaQuery.of(context).size.width * 0.75;
 
     return Padding(
       padding: const EdgeInsets.all(4),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (showSender)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(6, 4, 6, 6),
-              child: Text(
-                payload.senderName,
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: UserColorGenerator.forName(payload.senderName),
+      child: IntrinsicWidth(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (showSender)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(6, 4, 6, 6),
+                child: Text(
+                  payload.senderName,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: UserColorGenerator.forName(payload.senderName),
+                  ),
+                ),
+              ),
+            
+            ClipRRect(
+              borderRadius: innerRadius,
+              child: Container(
+                constraints: BoxConstraints(
+                  maxWidth: maxMediaWidth,
+                  minWidth: 220,
+                ),
+                height: 120,
+                color: const Color(0xFF1E293B),
+                child: Center(
+                  child: isDownloading
+                      ? CircularProgressIndicator(
+                          value: progress,
+                          color: Colors.white,
+                          strokeWidth: 3,
+                        )
+                      : (!isDownloaded && !isMe
+                          ? Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                GestureDetector(
+                                  onTap: () => _downloadFile(payload, appState),
+                                  child: Container(
+                                    padding: const EdgeInsets.all(16),
+                                    decoration: BoxDecoration(
+                                      color: Colors.black.withOpacity(0.5),
+                                      shape: BoxShape.circle,
+                                      border: Border.all(color: Colors.white24, width: 1.5),
+                                    ),
+                                    child: const Icon(Icons.download, color: Colors.white, size: 28),
+                                  ),
+                                ),
+                                const SizedBox(height: 12),
+                                Text(
+                                  _formatBytes(payload.size),
+                                  style: const TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                              ],
+                            )
+                          : const Icon(Icons.insert_drive_file, color: Colors.white54, size: 48)),
                 ),
               ),
             ),
-          
-          ClipRRect(
-            borderRadius: innerRadius,
-            child: Container(
-              width: 260,
-              height: 120,
-              color: const Color(0xFF1E293B),
-              child: Center(
-                child: isDownloading
-                    ? CircularProgressIndicator(
-                        value: progress,
-                        color: Colors.white,
-                        strokeWidth: 3,
-                      )
-                    : (!isDownloaded && !isMe
-                        ? Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              GestureDetector(
-                                onTap: () => _downloadFile(payload, appState),
-                                child: Container(
-                                  padding: const EdgeInsets.all(16),
-                                  decoration: BoxDecoration(
-                                    color: Colors.black.withOpacity(0.5),
-                                    shape: BoxShape.circle,
-                                    border: Border.all(color: Colors.white24, width: 1.5),
-                                  ),
-                                  child: const Icon(Icons.download, color: Colors.white, size: 28),
-                                ),
-                              ),
-                              const SizedBox(height: 12),
-                              Text(
-                                _formatBytes(payload.size),
-                                style: const TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w600,
-                                  color: Colors.white,
-                                ),
-                              ),
-                            ],
-                          )
-                        : const Icon(Icons.insert_drive_file, color: Colors.white54, size: 48)),
-              ),
-            ),
-          ),
-          
-          Padding(
-            padding: const EdgeInsets.fromLTRB(6, 8, 6, 4),
-            child: SizedBox(
-              width: 248, 
+            
+            Padding(
+              padding: const EdgeInsets.fromLTRB(6, 8, 6, 4),
               child: Row(
                 children: [
                   Expanded(
@@ -628,8 +701,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 ],
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -643,7 +716,6 @@ class _HomeScreenState extends State<HomeScreen> {
           backgroundColor: Colors.black,
           body: Stack(
             children: [
-              // FULL SCREEN ZOOM CONTAINER - this is the fix
               SizedBox.expand(
                 child: InteractiveViewer(
                   clipBehavior: Clip.none,
@@ -658,7 +730,6 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ),
               ),
-              // tap anywhere or use close button to exit
               Positioned(
                 top: MediaQuery.of(context).padding.top + 8,
                 left: 8,
@@ -670,19 +741,15 @@ class _HomeScreenState extends State<HomeScreen> {
             ],
           ),
         ),
-        transitionDuration: Duration.zero, // instant popup, no slide
+        transitionDuration: Duration.zero,
       ),
     );
   }
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // PRODUCTION IMAGE COPY (Direct byte-to-clipboard transfer)
-  // ─────────────────────────────────────────────────────────────────────────
   Future<void> _copyImageToClipboard(SharePayload payload, AppState appState) async {
     try {
       String? path = appState.downloadedFilePaths[payload.id];
       
-      // Auto-download if it's not downloaded yet
       if (path == null || !io.File(path).existsSync()) {
         await appState.downloadPayload(payload);
         path = appState.downloadedFilePaths[payload.id];
@@ -707,7 +774,6 @@ class _HomeScreenState extends State<HomeScreen> {
       }
     }
   }
-  // ─────────────────────────────────────────────────────────────────────────
 
   Future<void> _downloadFile(SharePayload payload, AppState appState) async {
     try {
@@ -910,9 +976,6 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Smart Input Bar
-// ─────────────────────────────────────────────────────────────────────────────
 class _SendIntent extends Intent { const _SendIntent(); }
 class _PasteIntent extends Intent { const _PasteIntent(); }
 
