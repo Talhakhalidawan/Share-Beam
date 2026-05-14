@@ -4,13 +4,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
-import 'package:pasteboard/pasteboard.dart';
+
+// NEW IMPORTS
+import 'package:super_clipboard/super_clipboard.dart';
+import 'package:share_plus/share_plus.dart';
+
 import 'package:file_picker/file_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:gal/gal.dart';
-import 'package:share_plus/share_plus.dart';
 
 import '../../core/app_state.dart';
 import '../../core/models.dart';
@@ -26,6 +29,7 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final ScrollController _scrollController = ScrollController();
+  int _previousHistoryLength = 0;
 
   @override
   void initState() {
@@ -53,8 +57,11 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     final appState = context.watch<AppState>();
     final history = appState.history;
-
-    WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+    
+    if (history.length != _previousHistoryLength) {
+      _previousHistoryLength = history.length;
+      WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+    }
 
     return Scaffold(
       backgroundColor: AppTheme.bgColor,
@@ -199,8 +206,7 @@ class _HomeScreenState extends State<HomeScreen> {
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppTheme.accentColor,
                 foregroundColor: Colors.white,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
                 ),
@@ -217,17 +223,12 @@ class _HomeScreenState extends State<HomeScreen> {
     final appState = context.read<AppState>();
     final history = appState.history;
     final isMe = payload.senderName == appState.deviceName;
-
     final showSender = !isMe &&
         (index == 0 || history[index - 1].senderName != payload.senderName);
-
     final alignment =
         isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start;
-
     final bubbleColor =
         isMe ? const Color(0xFFDCF8C6) : AppTheme.surfaceColor;
-
-    // All corners fully rounded as requested
     final borderRadius = BorderRadius.circular(16);
 
     return Padding(
@@ -297,11 +298,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildTextContent(SharePayload payload, bool showSender, bool isMe) {
     final time = DateFormat('HH:mm').format(payload.timestamp);
-    
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-      // IntrinsicWidth forces the container to perfectly hug the text
-      // solving the "small text but big container" issue
       child: IntrinsicWidth(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -330,10 +328,10 @@ class _HomeScreenState extends State<HomeScreen> {
               children: [
                 if (!isMe) ...[
                   GestureDetector(
-                    onTap: () {
-                      Clipboard.setData(
+                    onTap: () async {
+                      await Clipboard.setData(
                           ClipboardData(text: payload.data ?? ''));
-                      _showCopiedSnack();
+                      if (mounted) _showCopiedSnack();
                     },
                     child: const Icon(
                       Icons.copy,
@@ -366,8 +364,6 @@ class _HomeScreenState extends State<HomeScreen> {
         localPath != null && io.File(localPath).existsSync();
     final progress = appState.downloadsProgress[payload.id];
     final isDownloading = progress != null && progress < 1.0;
-
-    // All corners fully rounded as requested
     final innerRadius = BorderRadius.circular(12);
 
     return Padding(
@@ -424,6 +420,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                   const Spacer(),
                   GestureDetector(
+                    // Interactive Debug Sheet
                     onTap: () => _copyImageToClipboard(payload, appState),
                     child: const Icon(
                       Icons.copy,
@@ -463,7 +460,7 @@ class _HomeScreenState extends State<HomeScreen> {
     return Container(
       width: 260,
       height: 260,
-      color: const Color(0xFF1E293B), // High contrast slate dark color
+      color: const Color(0xFF1E293B),
       child: Center(
         child: isDownloading
             ? CircularProgressIndicator(
@@ -509,8 +506,6 @@ class _HomeScreenState extends State<HomeScreen> {
         localPath != null && io.File(localPath).existsSync();
     final progress = appState.downloadsProgress[payload.id];
     final isDownloading = progress != null && progress < 1.0;
-
-    // All corners fully rounded as requested
     final innerRadius = BorderRadius.circular(12);
 
     return Padding(
@@ -532,7 +527,6 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
           
-          // Dark box container (no overlapped icons anymore)
           ClipRRect(
             borderRadius: innerRadius,
             child: Container(
@@ -559,7 +553,6 @@ class _HomeScreenState extends State<HomeScreen> {
                                     shape: BoxShape.circle,
                                     border: Border.all(color: Colors.white24, width: 1.5),
                                   ),
-                                  // Clean download icon (no file icon behind it)
                                   child: const Icon(Icons.download, color: Colors.white, size: 28),
                                 ),
                               ),
@@ -574,17 +567,15 @@ class _HomeScreenState extends State<HomeScreen> {
                               ),
                             ],
                           )
-                        // If downloaded (or sent by me), show file icon cleanly
                         : const Icon(Icons.insert_drive_file, color: Colors.white54, size: 48)),
               ),
             ),
           ),
           
-          // Bottom text / file info bar
           Padding(
             padding: const EdgeInsets.fromLTRB(6, 8, 6, 4),
             child: SizedBox(
-              width: 248, // Aligns perfectly with the 260 container inside the padding
+              width: 248, 
               child: Row(
                 children: [
                   Expanded(
@@ -660,6 +651,9 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // ULTIMATE DEBUG MENU: super_clipboard & share_plus
+  // ─────────────────────────────────────────────────────────────────────────
   Future<void> _copyImageToClipboard(SharePayload payload, AppState appState) async {
     try {
       String? path = appState.downloadedFilePaths[payload.id];
@@ -670,30 +664,137 @@ class _HomeScreenState extends State<HomeScreen> {
       }
       
       if (path != null && io.File(path).existsSync()) {
-        final bytes = await io.File(path).readAsBytes();
-        await Pasteboard.writeImage(bytes);
-        if (mounted) _showCopiedSnack();
+        if (!mounted) return;
+        
+        showModalBottomSheet(
+          context: context,
+          isScrollControlled: true,
+          backgroundColor: AppTheme.surfaceColor,
+          shape: const RoundedRectangleBorder(
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          builder: (ctx) {
+            return SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Padding(
+                      padding: EdgeInsets.all(16),
+                      child: Text('super_clipboard & Share Debug', 
+                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: AppTheme.textMain)),
+                    ),
+                    ListTile(
+                      leading: const Icon(Icons.image, color: Colors.blue),
+                      title: const Text('1. SuperClipboard: Copy Image Bytes', style: TextStyle(color: AppTheme.textMain)),
+                      subtitle: const Text('Writes PNG bytes to native clipboard', style: TextStyle(color: AppTheme.textMuted, fontSize: 12)),
+                      onTap: () async {
+                        Navigator.pop(ctx);
+                        try {
+                          final clipboard = SystemClipboard.instance;
+                          if (clipboard == null) throw Exception("Clipboard API not available on this OS");
+                          
+                          final bytes = await io.File(path!).readAsBytes();
+                          final item = DataWriterItem();
+                          item.add(Formats.png(bytes));
+                          await clipboard.write([item]);
+                          _showDebugSnack('SUCCESS: super_clipboard (Bytes/PNG)');
+                        } catch(e) {
+                          _showDebugSnack('FAIL: super_clipboard bytes - $e');
+                        }
+                      },
+                    ),
+                    ListTile(
+                      leading: const Icon(Icons.insert_link, color: Colors.green),
+                      title: const Text('2. SuperClipboard: Copy File URI', style: TextStyle(color: AppTheme.textMain)),
+                      subtitle: const Text('Writes file:// URI (Best for Desktop file managers)', style: TextStyle(color: AppTheme.textMuted, fontSize: 12)),
+                      onTap: () async {
+                        Navigator.pop(ctx);
+                        try {
+                          final clipboard = SystemClipboard.instance;
+                          if (clipboard == null) throw Exception("Clipboard API not available on this OS");
+                          
+                          final item = DataWriterItem();
+                          item.add(Formats.fileUri(Uri.file(path!)));
+                          await clipboard.write([item]);
+                          _showDebugSnack('SUCCESS: super_clipboard (File URI)');
+                        } catch(e) {
+                          _showDebugSnack('FAIL: super_clipboard URI - $e');
+                        }
+                      },
+                    ),
+                    ListTile(
+                      leading: const Icon(Icons.share, color: Colors.purple),
+                      title: const Text('3. Share_Plus: OS Share Sheet', style: TextStyle(color: AppTheme.textMain)),
+                      subtitle: const Text('Triggers native OS Share/Copy dialog', style: TextStyle(color: AppTheme.textMuted, fontSize: 12)),
+                      onTap: () async {
+                        Navigator.pop(ctx);
+                        try {
+                          _showDebugSnack('Opening OS Share Sheet...');
+                          await Share.shareXFiles([XFile(path!)]);
+                        } catch(e) {
+                          _showDebugSnack('FAIL: share_plus - $e');
+                        }
+                      },
+                    ),
+                    ListTile(
+                      leading: const Icon(Icons.text_fields, color: Colors.orange),
+                      title: const Text('4. Flutter Clipboard: Copy Text Path', style: TextStyle(color: AppTheme.textMain)),
+                      subtitle: const Text('Standard clipboard (C:\\...\\image.png)', style: TextStyle(color: AppTheme.textMuted, fontSize: 12)),
+                      onTap: () async {
+                        Navigator.pop(ctx);
+                        try {
+                          await Clipboard.setData(ClipboardData(text: path!));
+                          _showDebugSnack('SUCCESS: Standard Clipboard (Text Path)');
+                        } catch(e) {
+                          _showDebugSnack('FAIL: Standard Clipboard Path - $e');
+                        }
+                      },
+                    ),
+                    ListTile(
+                      leading: const Icon(Icons.link, color: Colors.red),
+                      title: const Text('5. Flutter Clipboard: Copy Text URI', style: TextStyle(color: AppTheme.textMain)),
+                      subtitle: const Text('Standard clipboard (file://...)', style: TextStyle(color: AppTheme.textMuted, fontSize: 12)),
+                      onTap: () async {
+                        Navigator.pop(ctx);
+                        try {
+                          final uri = Uri.file(path!).toString();
+                          await Clipboard.setData(ClipboardData(text: uri));
+                          _showDebugSnack('SUCCESS: Standard Clipboard (Text URI)');
+                        } catch(e) {
+                          _showDebugSnack('FAIL: Standard Clipboard URI - $e');
+                        }
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }
+        );
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to copy: $e')),
+          SnackBar(content: Text('Failed to prep copy: $e')),
         );
       }
     }
   }
 
-  Future<void> _downloadImage(SharePayload payload, AppState appState) async {
-    try {
-      await appState.downloadPayload(payload);
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Download failed: $e')),
-        );
-      }
+  void _showDebugSnack(String message) {
+    print('DEBUG COPY ---> $message'); 
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(message),
+          duration: const Duration(seconds: 4),
+        ),
+      );
     }
   }
+  // ─────────────────────────────────────────────────────────────────────────
 
   Future<void> _downloadFile(SharePayload payload, AppState appState) async {
     try {
@@ -726,9 +827,7 @@ class _HomeScreenState extends State<HomeScreen> {
         return;
       }
 
-      // Rest of the logic for Desktop
       final bytes = await file.readAsBytes();
-      
       io.Directory? saveDir;
       final home = io.Platform.environment['HOME'] ?? 
                    io.Platform.environment['USERPROFILE'];
@@ -750,7 +849,6 @@ class _HomeScreenState extends State<HomeScreen> {
       final fileName = 'sharebeam_${DateTime.now().millisecondsSinceEpoch}.png';
       final savePath = '${saveDir.path}/$fileName';
       await file.copy(savePath);
-
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Saved to $savePath')),
@@ -795,7 +893,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
       final savePath = '${saveDir.path}/$originalName';
       await file.copy(savePath);
-
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Saved to $savePath')),
@@ -821,7 +918,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildInputArea(AppState appState) {
     final isConnected = appState.isConnectedToHost || appState.isHosting;
-
     if (!isConnected && appState.history.isEmpty) {
       return const SizedBox.shrink();
     }
@@ -902,7 +998,7 @@ class _HomeScreenState extends State<HomeScreen> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Smart Input Bar - WhatsApp Style
+// Smart Input Bar
 // ─────────────────────────────────────────────────────────────────────────────
 class SmartInputBar extends StatefulWidget {
   final bool enabled;
@@ -916,32 +1012,28 @@ class _SmartInputBarState extends State<SmartInputBar> {
   final TextEditingController _controller = TextEditingController();
   Uint8List? _pendingImageBytes;
   String? _pendingImageName;
-  
+
   Future<bool> _handlePaste() async {
     try {
-      final bytes = await Pasteboard.image;
-      if (bytes != null && bytes.isNotEmpty && _pendingImageBytes == null) {
-        setState(() {
-          _pendingImageBytes = bytes;
-          _pendingImageName =
-              'image_${DateTime.now().millisecondsSinceEpoch}.png';
-        });
-        return true; 
-      }
-    } catch (_) {}
-
-    try {
-      final text = await Pasteboard.text;
+      // Use standard Flutter clipboard for text pasting to avoid dependencies
+      final clipboardData = await Clipboard.getData(Clipboard.kTextPlain);
+      final text = clipboardData?.text;
+      
       if (text != null && text.isNotEmpty) {
         final selection = _controller.selection;
-        final newText = _controller.text
-            .replaceRange(selection.start, selection.end, text);
+        final currentText = _controller.text;
+        
+        // Safely calculate offsets (handles cases where selection.start is -1)
+        final start = selection.start >= 0 ? selection.start : currentText.length;
+        final end = selection.end >= 0 ? selection.end : currentText.length;
+        
+        final newText = currentText.replaceRange(start, end, text);
+        
         _controller.value = TextEditingValue(
           text: newText,
-          selection:
-              TextSelection.collapsed(offset: selection.start + text.length),
+          selection: TextSelection.collapsed(offset: start + text.length),
         );
-        setState(() {}); // trigger rebuild for button color
+        setState(() {}); 
         return true;
       }
     } catch (_) {}
@@ -951,7 +1043,7 @@ class _SmartInputBarState extends State<SmartInputBar> {
   void _send() async {
     final text = _controller.text.trim();
     final appState = context.read<AppState>();
-
+    
     if (_pendingImageBytes != null && _pendingImageName != null) {
       await appState.shareImageBytes(_pendingImageBytes!, _pendingImageName!);
       setState(() {
@@ -963,7 +1055,7 @@ class _SmartInputBarState extends State<SmartInputBar> {
     if (text.isNotEmpty) {
       appState.shareText(text);
       _controller.clear();
-      setState(() {}); 
+      setState(() {});
     }
   }
 
@@ -975,7 +1067,6 @@ class _SmartInputBarState extends State<SmartInputBar> {
           allowCompression: false,
           allowMultiple: false,
         );
-        
         if (result != null && result.files.isNotEmpty) {
           final path = result.files.single.path;
           if (path != null) {
@@ -986,7 +1077,6 @@ class _SmartInputBarState extends State<SmartInputBar> {
         final typeGroup = image
             ? const XTypeGroup(label: 'Images', extensions: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'heic'])
             : const XTypeGroup(label: 'All Files');
-
         final XFile? file = await openFile(acceptedTypeGroups: [typeGroup]);
         
         if (file != null) {
@@ -1029,8 +1119,7 @@ class _SmartInputBarState extends State<SmartInputBar> {
             children: [
               if (_pendingImageBytes != null)
                 Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
                   child: Row(
                     children: [
                       ClipRRect(
@@ -1055,8 +1144,7 @@ class _SmartInputBarState extends State<SmartInputBar> {
                       IconButton(
                         icon: const Icon(Icons.close, size: 20),
                         color: AppTheme.textMuted,
-                        onPressed: () =>
-                            setState(() => _pendingImageBytes = null),
+                        onPressed: () => setState(() => _pendingImageBytes = null),
                       ),
                     ],
                   ),
@@ -1085,6 +1173,8 @@ class _SmartInputBarState extends State<SmartInputBar> {
                         controller: _controller,
                         enabled: widget.enabled,
                         textCapitalization: TextCapitalization.sentences,
+                        minLines: 1,
+                        maxLines: 5,
                         contentInsertionConfiguration: ContentInsertionConfiguration(
                           onContentInserted: (content) {
                             if (content.data != null) {
@@ -1168,8 +1258,7 @@ class _SmartInputBarState extends State<SmartInputBar> {
                 ListTile(
                   leading: CircleAvatar(
                     backgroundColor: AppTheme.accentColor.withOpacity(0.1),
-                    child: const Icon(Icons.image,
-                        color: AppTheme.accentColor),
+                    child: const Icon(Icons.image, color: AppTheme.accentColor),
                   ),
                   title: const Text('Image'),
                   onTap: () {
@@ -1180,8 +1269,7 @@ class _SmartInputBarState extends State<SmartInputBar> {
                 ListTile(
                   leading: CircleAvatar(
                     backgroundColor: AppTheme.accentColor.withOpacity(0.1),
-                    child: const Icon(Icons.insert_drive_file,
-                        color: AppTheme.accentColor),
+                    child: const Icon(Icons.insert_drive_file, color: AppTheme.accentColor),
                   ),
                   title: const Text('File'),
                   onTap: () {
