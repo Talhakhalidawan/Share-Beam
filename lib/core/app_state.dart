@@ -164,6 +164,36 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> clearChat() async {
+    // Delete downloaded/temporary files
+    try {
+      final docsDir = await getApplicationDocumentsDirectory();
+      final tempDir = await getTemporaryDirectory();
+      
+      for (final path in downloadedFilePaths.values) {
+        try {
+          final file = io.File(path);
+          if (await file.exists()) {
+            // Only delete if it's in our app's managed directories
+            if (path.startsWith(docsDir.path) || path.startsWith(tempDir.path)) {
+              await file.delete();
+            }
+          }
+        } catch (e) {
+          debugPrint('[AppState] Failed to delete cache file $path: $e');
+        }
+      }
+    } catch (e) {
+      debugPrint('[AppState] Error during clearChat file deletion: $e');
+    }
+
+    history.clear();
+    downloadedFilePaths.clear();
+    downloadsProgress.clear();
+    _fileTransferService.clearHostedFiles();
+    notifyListeners();
+  }
+
   void _handleIncomingPayload(SharePayload payload) {
     if (!history.any((item) => item.id == payload.id)) {
       history.add(payload);

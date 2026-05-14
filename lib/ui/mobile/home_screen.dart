@@ -111,6 +111,12 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
         ),
         actions: [
+          if (history.isNotEmpty)
+            IconButton(
+              icon: const Icon(Icons.delete_outline, color: AppTheme.accentColor),
+              tooltip: 'Clear Chat & Cache',
+              onPressed: () => _confirmClearChat(context, appState),
+            ),
           IconButton(
             icon: const Icon(Icons.settings, color: AppTheme.accentColor),
             onPressed: () => Navigator.pushNamed(context, '/settings'),
@@ -122,6 +128,37 @@ class _HomeScreenState extends State<HomeScreen> {
         children: [
           Expanded(child: _buildChatBody(appState, history)),
           _buildInputArea(appState),
+        ],
+      ),
+    );
+  }
+
+  void _confirmClearChat(BuildContext context, AppState appState) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppTheme.surfaceColor,
+        title: const Text(
+          'Clear Chat?',
+          style: TextStyle(color: AppTheme.textMain),
+        ),
+        content: const Text(
+          'This will clear all messages and delete downloaded files from the app cache.',
+          style: TextStyle(color: AppTheme.textMuted),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel', style: TextStyle(color: AppTheme.textMuted)),
+          ),
+          TextButton(
+            onPressed: () {
+              appState.clearChat();
+              Navigator.pop(context);
+            },
+            style: TextButton.styleFrom(foregroundColor: AppTheme.accentRed),
+            child: const Text('Clear'),
+          ),
         ],
       ),
     );
