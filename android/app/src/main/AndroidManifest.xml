@@ -9,6 +9,14 @@
         android:label="sharebeam"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
+        
+        <provider
+            android:name="com.superlist.super_native_extensions.DataProvider"
+            android:authorities="${applicationId}.SuperClipboardDataProvider"
+            android:exported="true"
+            android:grantUriPermissions="true" >
+        </provider>
+
         <activity
             android:name=".MainActivity"
             android:exported="true"

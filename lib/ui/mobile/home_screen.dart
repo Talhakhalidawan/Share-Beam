@@ -5,7 +5,6 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 
-// NEW IMPORTS
 import 'package:super_clipboard/super_clipboard.dart';
 import 'package:share_plus/share_plus.dart';
 
@@ -420,7 +419,6 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                   const Spacer(),
                   GestureDetector(
-                    // Interactive Debug Sheet
                     onTap: () => _copyImageToClipboard(payload, appState),
                     child: const Icon(
                       Icons.copy,
@@ -652,146 +650,35 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   // ─────────────────────────────────────────────────────────────────────────
-  // ULTIMATE DEBUG MENU: super_clipboard & share_plus
+  // PRODUCTION IMAGE COPY (Direct byte-to-clipboard transfer)
   // ─────────────────────────────────────────────────────────────────────────
   Future<void> _copyImageToClipboard(SharePayload payload, AppState appState) async {
     try {
       String? path = appState.downloadedFilePaths[payload.id];
       
+      // Auto-download if it's not downloaded yet
       if (path == null || !io.File(path).existsSync()) {
         await appState.downloadPayload(payload);
         path = appState.downloadedFilePaths[payload.id];
       }
       
       if (path != null && io.File(path).existsSync()) {
-        if (!mounted) return;
+        final clipboard = SystemClipboard.instance;
+        if (clipboard == null) throw Exception("Clipboard API not available on this OS");
         
-        showModalBottomSheet(
-          context: context,
-          isScrollControlled: true,
-          backgroundColor: AppTheme.surfaceColor,
-          shape: const RoundedRectangleBorder(
-            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-          ),
-          builder: (ctx) {
-            return SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Padding(
-                      padding: EdgeInsets.all(16),
-                      child: Text('super_clipboard & Share Debug', 
-                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: AppTheme.textMain)),
-                    ),
-                    ListTile(
-                      leading: const Icon(Icons.image, color: Colors.blue),
-                      title: const Text('1. SuperClipboard: Copy Image Bytes', style: TextStyle(color: AppTheme.textMain)),
-                      subtitle: const Text('Writes PNG bytes to native clipboard', style: TextStyle(color: AppTheme.textMuted, fontSize: 12)),
-                      onTap: () async {
-                        Navigator.pop(ctx);
-                        try {
-                          final clipboard = SystemClipboard.instance;
-                          if (clipboard == null) throw Exception("Clipboard API not available on this OS");
-                          
-                          final bytes = await io.File(path!).readAsBytes();
-                          final item = DataWriterItem();
-                          item.add(Formats.png(bytes));
-                          await clipboard.write([item]);
-                          _showDebugSnack('SUCCESS: super_clipboard (Bytes/PNG)');
-                        } catch(e) {
-                          _showDebugSnack('FAIL: super_clipboard bytes - $e');
-                        }
-                      },
-                    ),
-                    ListTile(
-                      leading: const Icon(Icons.insert_link, color: Colors.green),
-                      title: const Text('2. SuperClipboard: Copy File URI', style: TextStyle(color: AppTheme.textMain)),
-                      subtitle: const Text('Writes file:// URI (Best for Desktop file managers)', style: TextStyle(color: AppTheme.textMuted, fontSize: 12)),
-                      onTap: () async {
-                        Navigator.pop(ctx);
-                        try {
-                          final clipboard = SystemClipboard.instance;
-                          if (clipboard == null) throw Exception("Clipboard API not available on this OS");
-                          
-                          final item = DataWriterItem();
-                          item.add(Formats.fileUri(Uri.file(path!)));
-                          await clipboard.write([item]);
-                          _showDebugSnack('SUCCESS: super_clipboard (File URI)');
-                        } catch(e) {
-                          _showDebugSnack('FAIL: super_clipboard URI - $e');
-                        }
-                      },
-                    ),
-                    ListTile(
-                      leading: const Icon(Icons.share, color: Colors.purple),
-                      title: const Text('3. Share_Plus: OS Share Sheet', style: TextStyle(color: AppTheme.textMain)),
-                      subtitle: const Text('Triggers native OS Share/Copy dialog', style: TextStyle(color: AppTheme.textMuted, fontSize: 12)),
-                      onTap: () async {
-                        Navigator.pop(ctx);
-                        try {
-                          _showDebugSnack('Opening OS Share Sheet...');
-                          await Share.shareXFiles([XFile(path!)]);
-                        } catch(e) {
-                          _showDebugSnack('FAIL: share_plus - $e');
-                        }
-                      },
-                    ),
-                    ListTile(
-                      leading: const Icon(Icons.text_fields, color: Colors.orange),
-                      title: const Text('4. Flutter Clipboard: Copy Text Path', style: TextStyle(color: AppTheme.textMain)),
-                      subtitle: const Text('Standard clipboard (C:\\...\\image.png)', style: TextStyle(color: AppTheme.textMuted, fontSize: 12)),
-                      onTap: () async {
-                        Navigator.pop(ctx);
-                        try {
-                          await Clipboard.setData(ClipboardData(text: path!));
-                          _showDebugSnack('SUCCESS: Standard Clipboard (Text Path)');
-                        } catch(e) {
-                          _showDebugSnack('FAIL: Standard Clipboard Path - $e');
-                        }
-                      },
-                    ),
-                    ListTile(
-                      leading: const Icon(Icons.link, color: Colors.red),
-                      title: const Text('5. Flutter Clipboard: Copy Text URI', style: TextStyle(color: AppTheme.textMain)),
-                      subtitle: const Text('Standard clipboard (file://...)', style: TextStyle(color: AppTheme.textMuted, fontSize: 12)),
-                      onTap: () async {
-                        Navigator.pop(ctx);
-                        try {
-                          final uri = Uri.file(path!).toString();
-                          await Clipboard.setData(ClipboardData(text: uri));
-                          _showDebugSnack('SUCCESS: Standard Clipboard (Text URI)');
-                        } catch(e) {
-                          _showDebugSnack('FAIL: Standard Clipboard URI - $e');
-                        }
-                      },
-                    ),
-                  ],
-                ),
-              ),
-            );
-          }
-        );
+        final bytes = await io.File(path).readAsBytes();
+        final item = DataWriterItem();
+        item.add(Formats.png(bytes));
+        await clipboard.write([item]);
+        
+        if (mounted) _showCopiedSnack();
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to prep copy: $e')),
+          SnackBar(content: Text('Failed to copy image: $e')),
         );
       }
-    }
-  }
-
-  void _showDebugSnack(String message) {
-    print('DEBUG COPY ---> $message'); 
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(message),
-          duration: const Duration(seconds: 4),
-        ),
-      );
     }
   }
   // ─────────────────────────────────────────────────────────────────────────
@@ -1010,6 +897,7 @@ class SmartInputBar extends StatefulWidget {
 
 class _SmartInputBarState extends State<SmartInputBar> {
   final TextEditingController _controller = TextEditingController();
+  final FocusNode _focusNode = FocusNode(); // Added to maintain keyboard state
   Uint8List? _pendingImageBytes;
   String? _pendingImageName;
 
@@ -1057,6 +945,9 @@ class _SmartInputBarState extends State<SmartInputBar> {
       _controller.clear();
       setState(() {});
     }
+    
+    // Explicitly request focus back to keep keyboard open (WhatsApp style)
+    _focusNode.requestFocus();
   }
 
   void _pickFile({bool image = false}) async {
@@ -1171,6 +1062,7 @@ class _SmartInputBarState extends State<SmartInputBar> {
                     Expanded(
                       child: TextField(
                         controller: _controller,
+                        focusNode: _focusNode,
                         enabled: widget.enabled,
                         textCapitalization: TextCapitalization.sentences,
                         minLines: 1,
@@ -1233,62 +1125,148 @@ class _SmartInputBarState extends State<SmartInputBar> {
   }
 
   void _showAttachmentSheet(BuildContext context) {
-    showModalBottomSheet(
+    showGeneralDialog(
       context: context,
-      backgroundColor: AppTheme.surfaceColor,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (ctx) {
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 40,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: AppTheme.borderColor,
-                    borderRadius: BorderRadius.circular(2),
+      barrierDismissible: true,
+      barrierLabel: 'Close',
+      barrierColor: Colors.transparent,
+      transitionDuration: Duration.zero, // no animation
+      pageBuilder: (ctx, _, __) {
+        return Material(
+          type: MaterialType.transparency,
+          child: Stack(
+            children: [
+              // full screen tap to close
+              Positioned.fill(
+                child: GestureDetector(
+                  onTap: () => Navigator.pop(ctx),
+                  behavior: HitTestBehavior.opaque,
+                  child: const ColoredBox(color: Colors.transparent),
+                ),
+              ),
+              // your popup
+              SafeArea(
+                child: Padding(
+                  padding: const EdgeInsets.only(bottom: 65, left: 12),
+                  child: Align(
+                    alignment: Alignment.bottomLeft,
+                    child: GestureDetector(
+                      onTap: () {}, // block inside taps
+                      child: IntrinsicWidth(
+                        child: Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: AppTheme.surfaceColor,
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(color: AppTheme.borderColor, width: 0.5),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withOpacity(0.06),
+                                blurRadius: 20,
+                                offset: const Offset(0, 8),
+                              ),
+                            ],
+                          ),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              _buildAttachmentItem(
+                                ctx,
+                                icon: Icons.image,
+                                label: 'Gallery',
+                                color: const Color(0xFF007AFF),
+                                onTap: () {
+                                  Navigator.pop(ctx);
+                                  _pickFile(image: true);
+                                },
+                              ),
+                              const SizedBox(height: 4),
+                              Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 8),
+                                child: Divider(
+                                  height: 1,
+                                  thickness: 0.5,
+                                  color: AppTheme.borderColor,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              _buildAttachmentItem(
+                                ctx,
+                                icon: Icons.insert_drive_file,
+                                label: 'Document',
+                                color: const Color(0xFF5856D6),
+                                onTap: () {
+                                  Navigator.pop(ctx);
+                                  _pickFile(image: false);
+                                },
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
                   ),
                 ),
-                const SizedBox(height: 16),
-                ListTile(
-                  leading: CircleAvatar(
-                    backgroundColor: AppTheme.accentColor.withOpacity(0.1),
-                    child: const Icon(Icons.image, color: AppTheme.accentColor),
-                  ),
-                  title: const Text('Image'),
-                  onTap: () {
-                    Navigator.pop(ctx);
-                    _pickFile(image: true);
-                  },
-                ),
-                ListTile(
-                  leading: CircleAvatar(
-                    backgroundColor: AppTheme.accentColor.withOpacity(0.1),
-                    child: const Icon(Icons.insert_drive_file, color: AppTheme.accentColor),
-                  ),
-                  title: const Text('File'),
-                  onTap: () {
-                    Navigator.pop(ctx);
-                    _pickFile(image: false);
-                  },
-                ),
-                const SizedBox(height: 8),
-              ],
-            ),
+              ),
+            ],
           ),
         );
       },
     );
   }
 
+  Widget _buildAttachmentItem(
+    BuildContext context, {
+    required IconData icon,
+    required String label,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(10),
+        hoverColor: AppTheme.surfaceHover,
+        splashColor: AppTheme.accentColor.withOpacity(0.05),
+        highlightColor: AppTheme.surfaceHover,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          constraints: const BoxConstraints(minWidth: 180),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 28,
+                height: 28,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: color.withOpacity(0.12),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(icon, color: color, size: 18),
+              ),
+              const SizedBox(width: 10),
+              Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w400,
+                  color: AppTheme.textMain,
+                  height: 1.2,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   void dispose() {
     _controller.dispose();
+    _focusNode.dispose();
     super.dispose();
   }
 }
