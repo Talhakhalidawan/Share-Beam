@@ -271,102 +271,72 @@ class _ServerSettingsPageState extends State<ServerSettingsPage> {
 
   void _showJoinDialog(AppState appState) {
     final controller = TextEditingController();
-    bool connectAuto = false;
     showDialog(
       context: context,
       barrierDismissible: true,
-      builder: (_) => StatefulBuilder(
-        builder: (context, setSt) {
-          return _iosDialog(
-            title: 'Enter Host Address',
-            subtitle: 'Enter the host address along with port to join',
-            children: [
-              TextField(
-                controller: controller,
-                style: const TextStyle(color: _iosText),
-                decoration: InputDecoration(
-                  hintText: 'Enter Host (eg. 192.168.1.42:9876)',
-                  hintStyle: const TextStyle(color: _iosGray),
-                  filled: true,
-                  fillColor: _iosBg,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    borderSide: const BorderSide(color: _iosBorder),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    borderSide: const BorderSide(color: _iosBorder),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    borderSide: const BorderSide(color: _iosBlue),
-                  ),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+      builder: (_) => _iosDialog(
+        title: 'Enter Host Address',
+        subtitle: 'Enter the host address along with port to join',
+        children: [
+          TextField(
+            controller: controller,
+            style: const TextStyle(color: _iosText),
+            decoration: InputDecoration(
+              hintText: 'Enter Host (eg. 192.168.1.42:9876)',
+              hintStyle: const TextStyle(color: _iosGray),
+              filled: true,
+              fillColor: _iosBg,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: const BorderSide(color: _iosBorder),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: const BorderSide(color: _iosBorder),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: const BorderSide(color: _iosBlue),
+              ),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+            ),
+          ),
+          const SizedBox(height: 24),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _iosBlue,
+                foregroundColor: Colors.white,
+                elevation: 0,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
                 ),
               ),
-              const SizedBox(height: 4),
-              GestureDetector(
-                behavior: HitTestBehavior.translucent,
-                onTap: () => setSt(() => connectAuto = !connectAuto),
-                child: Row(
-                  children: [
-                    Checkbox(
-                      value: connectAuto,
-                      activeColor: _iosBlue,
-                      side: const BorderSide(color: _iosGray, width: 1.5),
-                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      visualDensity: VisualDensity.compact,
-                      onChanged: (v) => setSt(() => connectAuto = v ?? false),
-                    ),
-                    const SizedBox(width: 2),
-                    const Text(
-                      'Connect automatically',
-                      style: TextStyle(fontSize: 14, color: _iosGray),
-                    ),
-                  ],
-                ),
+              onPressed: appState.isBusy
+                  ? null
+                  : () async {
+                      final input = controller.text.trim();
+                      Navigator.of(context).pop();
+                      if (input.isEmpty) return;
+                      String ip = input;
+                      int port = appState.hostPort;
+                      if (input.contains(':')) {
+                        final parts = input.split(':');
+                        ip = parts[0];
+                        final p = int.tryParse(parts[1]);
+                        if (p != null) port = p;
+                      }
+                      appState.connectTo(ip, port);
+                    },
+              child: const Text(
+                'Join Host',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
               ),
-              const SizedBox(height: 12),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: _iosBlue,
-                    foregroundColor: Colors.white,
-                    elevation: 0,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  onPressed: appState.isBusy
-                      ? null
-                      : () async {
-                          final input = controller.text.trim();
-                          Navigator.of(context).pop();
-                          if (input.isEmpty) return;
-                          String ip = input;
-                          int port = appState.hostPort;
-                          if (input.contains(':')) {
-                            final parts = input.split(':');
-                            ip = parts[0];
-                            final p = int.tryParse(parts[1]);
-                            if (p != null) port = p;
-                          }
-                          if (connectAuto) {
-                            await Prefs.addAutoConnectHost(ip, port, 'Manual');
-                          }
-                          appState.connectTo(ip, port);
-                        },
-                  child: const Text(
-                    'Join Host',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-                  ),
-                ),
-              ),
-            ],
-          );
-        },
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -556,12 +526,23 @@ class _ServerSettingsPageState extends State<ServerSettingsPage> {
               ),
               ...appState.discoveredHosts.asMap().entries.map((e) {
                 final isLast = e.key == appState.discoveredHosts.length - 1;
+                final device = e.value;
+                final auto = appState.isAutoConnectEnabled(device.name);
                 return _listTile(
-                  label: e.value.name,
-                  trailing: const Icon(
-                    Icons.wifi_tethering, size: 20, color: _iosText,
+                  label: device.name,
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (auto)
+                        const Icon(CupertinoIcons.bolt_fill, size: 16, color: Colors.orange),
+                      const SizedBox(width: 8),
+                      const Icon(
+                        Icons.wifi_tethering, size: 20, color: _iosText,
+                      ),
+                    ],
                   ),
-                  onTap: () => appState.connectTo(e.value.ip, e.value.port),
+                  onTap: () => appState.connectTo(device.ip, device.port),
+                  onLongPress: () => appState.toggleAutoConnect(device.name),
                   showDivider: !isLast,
                 );
               }).toList(),
@@ -701,12 +682,29 @@ class _ServerSettingsPageState extends State<ServerSettingsPage> {
               else
                 ...appState.participants.asMap().entries.map((e) {
                   final isLast = e.key == appState.participants.length - 1;
+                  final name = e.value;
+                  // Clean labels to check auto-connect by name
+                  final cleanName = name
+                      .replaceFirst(' (Host, You)', '')
+                      .replaceFirst(' (Host)', '')
+                      .replaceFirst(' (You)', '');
+                  final auto = appState.isAutoConnectEnabled(cleanName);
+
                   return _listTile(
-                    label: e.value,
-                    trailing: const Icon(
-                      Icons.wifi_tethering, size: 20, color: _iosText,
+                    label: name,
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (auto)
+                          const Icon(CupertinoIcons.bolt_fill, size: 16, color: Colors.orange),
+                        const SizedBox(width: 8),
+                        const Icon(
+                          Icons.wifi_tethering, size: 20, color: _iosText,
+                        ),
+                      ],
                     ),
                     onTap: null,
+                    onLongPress: () => appState.toggleAutoConnect(cleanName),
                     showDivider: !isLast,
                   );
                 }).toList(),
@@ -731,6 +729,7 @@ class _ServerSettingsPageState extends State<ServerSettingsPage> {
     required String label,
     required Widget trailing,
     VoidCallback? onTap,
+    VoidCallback? onLongPress,
     bool showDivider = true,
     bool isPlaceholder = false,
   }) {
@@ -755,7 +754,7 @@ class _ServerSettingsPageState extends State<ServerSettingsPage> {
       ),
     );
 
-    if (onTap == null) {
+    if (onTap == null && onLongPress == null) {
       return Container(
         decoration: BoxDecoration(
           border: showDivider
@@ -774,6 +773,7 @@ class _ServerSettingsPageState extends State<ServerSettingsPage> {
           bottom: Radius.circular(showDivider ? 0 : 12),
         ),
         onTap: onTap,
+        onLongPress: onLongPress,
         child: Container(
           decoration: BoxDecoration(
             border: showDivider

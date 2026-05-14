@@ -326,18 +326,29 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  bool isAutoConnectEnabled(String name) {
+    return Prefs.getAutoConnectNames().contains(name);
+  }
+
+  Future<void> toggleAutoConnect(String name) async {
+    if (isAutoConnectEnabled(name)) {
+      await Prefs.removeAutoConnectName(name);
+    } else {
+      await Prefs.addAutoConnectName(name);
+    }
+    notifyListeners();
+  }
+
   void _tryAutoConnect(List<DiscoveredDevice> devices) {
-    final saved = Prefs.getAutoConnectHosts();
-    if (saved.isEmpty) return;
+    final savedNames = Prefs.getAutoConnectNames();
+    if (savedNames.isEmpty) return;
 
     for (final device in devices) {
-      for (final entry in saved) {
-        if (device.ip == entry['ip'] && device.port == entry['port']) {
-          if (device.ip == localIp && device.port == hostPort) continue;
-          print('[AppState] Auto-connecting to ${device.name}');
-          connectTo(device.ip, device.port);
-          return;
-        }
+      if (savedNames.contains(device.name)) {
+        if (device.ip == localIp && device.port == hostPort) continue;
+        print('[AppState] Auto-connecting to ${device.name} (${device.ip}:${device.port})');
+        connectTo(device.ip, device.port);
+        return;
       }
     }
   }
@@ -459,6 +470,15 @@ class AppState extends ChangeNotifier {
         connectedHostIp = ip;
         connectedHostPort = port;
         _setStatus('Connected to $ip:$port', persistent: true);
+
+        // Auto-remember this host by name for future connections
+        final discovered = discoveredHosts.firstWhere(
+          (d) => d.ip == ip && d.port == port,
+          orElse: () => DiscoveredDevice(name: 'Manual Connection', ip: ip, port: port),
+        );
+        if (discovered.name != 'Manual Connection') {
+          Prefs.addAutoConnectName(discovered.name);
+        }
       } else {
         _setStatus(
           'Could not reach $ip:$port after 3 attempts. '

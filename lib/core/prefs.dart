@@ -21,37 +21,26 @@ class Prefs {
     return _i.setString('device_name', name);
   }
 
-  // ── Auto-connect hosts (JSON strings) ──────────────────────────────────────
-  static List<Map<String, dynamic>> getAutoConnectHosts() {
-    final raw = _i.getStringList('auto_connect_hosts') ?? [];
-    return raw.map((s) {
-      try {
-        return jsonDecode(s) as Map<String, dynamic>;
-      } catch (_) {
-        return <String, dynamic>{};
-      }
-    }).where((m) => m.isNotEmpty).toList();
+  // ── Auto-connect hosts (by name) ──────────────────────────────────────────
+  static List<String> getAutoConnectNames() {
+    return _i.getStringList('auto_connect_names') ?? [];
   }
 
-  static Future<bool> addAutoConnectHost(String ip, int port, String name) async {
-    final hosts = getAutoConnectHosts();
-    // Prevent duplicates
-    if (hosts.any((h) => h['ip'] == ip && h['port'] == port)) return true;
-    
-    hosts.add({'ip': ip, 'port': port, 'name': name});
-    final raw = hosts.map((h) => jsonEncode(h)).toList();
-    return _i.setStringList('auto_connect_hosts', raw);
+  static Future<bool> addAutoConnectName(String name) async {
+    final names = getAutoConnectNames();
+    if (names.contains(name)) return true;
+    names.add(name);
+    return _i.setStringList('auto_connect_names', names);
   }
 
-  static Future<bool> removeAutoConnectHost(String ip, int port) async {
-    final hosts = getAutoConnectHosts();
-    hosts.removeWhere((h) => h['ip'] == ip && h['port'] == port);
-    final raw = hosts.map((h) => jsonEncode(h)).toList();
-    return _i.setStringList('auto_connect_hosts', raw);
+  static Future<bool> removeAutoConnectName(String name) async {
+    final names = getAutoConnectNames();
+    names.remove(name);
+    return _i.setStringList('auto_connect_names', names);
   }
 
   static Future<bool> clearAutoConnectHosts() async {
-    return _i.remove('auto_connect_hosts');
+    return _i.remove('auto_connect_names');
   }
 
   // ── Download Path ────────────────────────────────────────────────────────
