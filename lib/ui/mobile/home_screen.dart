@@ -626,25 +626,41 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _openFullScreenImage(BuildContext context, String imagePath) {
     Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (context) => Scaffold(
+      PageRouteBuilder(
+        opaque: true,
+        barrierColor: Colors.black,
+        pageBuilder: (_, __, ___) => Scaffold(
           backgroundColor: Colors.black,
-          appBar: AppBar(
-            backgroundColor: Colors.black,
-            elevation: 0,
-            iconTheme: const IconThemeData(color: Colors.white),
-          ),
-          body: Center(
-            child: InteractiveViewer(
-              minScale: 0.5,
-              maxScale: 4.0,
-              child: Image.file(
-                io.File(imagePath),
-                fit: BoxFit.contain,
+          body: Stack(
+            children: [
+              // FULL SCREEN ZOOM CONTAINER - this is the fix
+              SizedBox.expand(
+                child: InteractiveViewer(
+                  clipBehavior: Clip.none,
+                  panEnabled: true,
+                  minScale: 1.0,
+                  maxScale: 5.0,
+                  child: Image.file(
+                    io.File(imagePath),
+                    fit: BoxFit.contain,
+                    width: double.infinity,
+                    height: double.infinity,
+                  ),
+                ),
               ),
-            ),
+              // tap anywhere or use close button to exit
+              Positioned(
+                top: MediaQuery.of(context).padding.top + 8,
+                left: 8,
+                child: IconButton(
+                  icon: const Icon(Icons.close, color: Colors.white, size: 28),
+                  onPressed: () => Navigator.pop(context),
+                ),
+              ),
+            ],
           ),
         ),
+        transitionDuration: Duration.zero, // instant popup, no slide
       ),
     );
   }
