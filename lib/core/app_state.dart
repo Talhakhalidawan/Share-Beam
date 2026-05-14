@@ -209,22 +209,45 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  Future<String> _getDownloadDir() async {
+    if (kIsWeb) return '';
+    
+    // Try system downloads directory (works on Desktop)
+    try {
+      final dir = await getDownloadsDirectory();
+      if (dir != null) return dir.path;
+    } catch (_) {}
+
+    // Fallback for Desktop if getDownloadsDirectory fails
+    if (io.Platform.isLinux || io.Platform.isMacOS || io.Platform.isWindows) {
+      final home = io.Platform.environment['HOME'] ?? 
+                   io.Platform.environment['USERPROFILE'];
+      if (home != null) {
+        final downloads = io.Directory('$home/Downloads');
+        if (await downloads.exists()) return downloads.path;
+      }
+    }
+    
+    // Fallback for Mobile (Android/iOS)
+    return (await getApplicationDocumentsDirectory()).path;
+  }
+
   Future<void> _autoDownload(SharePayload payload) async {
     try {
-      final dir = await getApplicationDocumentsDirectory();
+      final dir = await _getDownloadDir();
       final file = await _fileTransferService.downloadFile(
         ip: payload.senderIp!,
         port: payload.senderPort!,
         id: payload.id,
         fileName: payload.fileName,
-        saveDirectory: dir.path,
+        saveDirectory: dir,
       );
       if (file != null) {
         downloadedFilePaths[payload.id] = file.path;
         notifyListeners();
       }
     } catch (e) {
-      print('[AppState] Auto-download failed: $e');
+      debugPrint('[AppState] Auto-download failed: $e');
     }
   }
 
@@ -508,13 +531,13 @@ class AppState extends ChangeNotifier {
       return;
     }
 
-    final dir = await getApplicationDocumentsDirectory();
+    final dir = await _getDownloadDir();
     final downloadedFile = await _fileTransferService.downloadFile(
       ip: ip,
       port: port,
       id: id,
       fileName: fileName,
-      saveDirectory: dir.path,
+      saveDirectory: dir,
     );
 
     if (downloadedFile != null) {

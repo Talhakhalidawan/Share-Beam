@@ -538,15 +538,6 @@ class _HomeScreenState extends State<HomeScreen> {
                         color: AppTheme.textMuted,
                       ),
                     ),
-                    const SizedBox(width: 12),
-                    GestureDetector(
-                      onTap: () => _saveImageToLocalStorage(localPath!),
-                      child: const Icon(
-                        Icons.save_alt,
-                        size: 16,
-                        color: AppTheme.textMuted,
-                      ),
-                    ),
                   ] else ...[
                     const Spacer(),
                     Text(
@@ -709,32 +700,13 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
                   const SizedBox(width: 8),
-                  if (isDownloaded && !isMe) ...[
-                    Text(
-                      time,
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: AppTheme.textMuted.withOpacity(0.8),
-                      ),
+                  Text(
+                    time,
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: AppTheme.textMuted.withOpacity(0.8),
                     ),
-                    const SizedBox(width: 12),
-                    GestureDetector(
-                      onTap: () => _saveFileToLocalStorage(localPath!, payload.fileName),
-                      child: const Icon(
-                        Icons.save_alt,
-                        size: 16,
-                        color: AppTheme.textMuted,
-                      ),
-                    ),
-                  ] else ...[
-                    Text(
-                      time,
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: AppTheme.textMuted.withOpacity(0.8),
-                      ),
-                    ),
-                  ]
+                  ),
                 ],
               ),
             ),
@@ -819,105 +791,6 @@ class _HomeScreenState extends State<HomeScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Download failed: $e')),
-        );
-      }
-    }
-  }
-
-  Future<void> _saveImageToLocalStorage(String imagePath) async {
-    try {
-      final file = io.File(imagePath);
-      if (!await file.exists()) return;
-
-      if (io.Platform.isAndroid || io.Platform.isIOS) {
-        final hasAccess = await Gal.hasAccess();
-        if (!hasAccess) {
-          await Gal.requestAccess();
-        }
-        await Gal.putImage(imagePath);
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Saved to Gallery')),
-          );
-        }
-        return;
-      }
-
-      final bytes = await file.readAsBytes();
-      io.Directory? saveDir;
-      final home = io.Platform.environment['HOME'] ?? 
-                   io.Platform.environment['USERPROFILE'];
-      if (home != null) {
-        saveDir = io.Directory('$home/Downloads');
-        if (!await saveDir.exists()) {
-          saveDir = io.Directory('$home/Documents');
-        }
-      }
-
-      if (saveDir == null) {
-        throw Exception('Could not determine save location');
-      }
-
-      if (!await saveDir.exists()) {
-        await saveDir.create(recursive: true);
-      }
-
-      final fileName = 'sharebeam_${DateTime.now().millisecondsSinceEpoch}.png';
-      final savePath = '${saveDir.path}/$fileName';
-      await file.copy(savePath);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Saved to $savePath')),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Save failed: $e')),
-        );
-      }
-    }
-  }
-
-  Future<void> _saveFileToLocalStorage(String filePath, String originalName) async {
-    try {
-      final file = io.File(filePath);
-      if (!await file.exists()) return;
-
-      if (io.Platform.isAndroid || io.Platform.isIOS) {
-        await Share.shareXFiles([XFile(filePath, name: originalName)]);
-        return;
-      }
-
-      io.Directory? saveDir;
-      final home = io.Platform.environment['HOME'] ?? 
-                   io.Platform.environment['USERPROFILE'];
-      if (home != null) {
-        saveDir = io.Directory('$home/Downloads');
-        if (!await saveDir.exists()) {
-          saveDir = io.Directory('$home/Documents');
-        }
-      }
-
-      if (saveDir == null) {
-        throw Exception('Could not determine save location');
-      }
-
-      if (!await saveDir.exists()) {
-        await saveDir.create(recursive: true);
-      }
-
-      final savePath = '${saveDir.path}/$originalName';
-      await file.copy(savePath);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Saved to $savePath')),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Save failed: $e')),
         );
       }
     }
