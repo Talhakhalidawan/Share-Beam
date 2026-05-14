@@ -913,6 +913,9 @@ class _HomeScreenState extends State<HomeScreen> {
 // ─────────────────────────────────────────────────────────────────────────────
 // Smart Input Bar
 // ─────────────────────────────────────────────────────────────────────────────
+class _SendIntent extends Intent { const _SendIntent(); }
+class _PasteIntent extends Intent { const _PasteIntent(); }
+
 class SmartInputBar extends StatefulWidget {
   final bool enabled;
   const SmartInputBar({Key? key, required this.enabled}) : super(key: key);
@@ -923,10 +926,9 @@ class SmartInputBar extends StatefulWidget {
 
 class _SmartInputBarState extends State<SmartInputBar> {
   final TextEditingController _controller = TextEditingController();
-  final FocusNode _focusNode = FocusNode(); // Added to maintain keyboard state
+  final FocusNode _focusNode = FocusNode();
   Uint8List? _pendingImageBytes;
   String? _pendingImageName;
-  
 
   Future<bool> _handlePaste() async {
     try {
@@ -940,7 +942,6 @@ class _SmartInputBarState extends State<SmartInputBar> {
       }
     } catch (_) {}
 
-    // 2. Text fallback
     try {
       final text = await Pasteboard.text;
       if (text == null || text.isEmpty) {
@@ -991,7 +992,6 @@ class _SmartInputBarState extends State<SmartInputBar> {
       setState(() {});
     }
     
-    // Explicitly request focus back to keep keyboard open (WhatsApp style)
     _focusNode.requestFocus();
   }
 
@@ -1031,19 +1031,26 @@ class _SmartInputBarState extends State<SmartInputBar> {
   @override
   Widget build(BuildContext context) {
     bool hasInput = _controller.text.trim().isNotEmpty || _pendingImageBytes != null;
+    final isDesktop = !io.Platform.isAndroid && !io.Platform.isIOS;
 
     return Shortcuts(
       shortcuts: {
-        SingleActivator(LogicalKeyboardKey.keyV, control: true):
-            const _PasteIntent(),
-        SingleActivator(LogicalKeyboardKey.keyV, meta: true):
-            const _PasteIntent(),
+        if (isDesktop) const SingleActivator(LogicalKeyboardKey.enter): const _SendIntent(),
+        if (isDesktop) const SingleActivator(LogicalKeyboardKey.numpadEnter): const _SendIntent(),
+        const SingleActivator(LogicalKeyboardKey.keyV, control: true): const _PasteIntent(),
+        const SingleActivator(LogicalKeyboardKey.keyV, meta: true): const _PasteIntent(),
       },
       child: Actions(
         actions: {
           _PasteIntent: CallbackAction<_PasteIntent>(
             onInvoke: (_) {
               _handlePaste();
+              return null;
+            },
+          ),
+          _SendIntent: CallbackAction<_SendIntent>(
+            onInvoke: (_) {
+              if (widget.enabled && hasInput) _send();
               return null;
             },
           ),
@@ -1092,17 +1099,18 @@ class _SmartInputBarState extends State<SmartInputBar> {
                   borderRadius: BorderRadius.circular(24),
                 ),
                 child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
                     const SizedBox(width: 4),
-                    IconButton(
-                      icon: const Icon(Icons.add, color: AppTheme.textMuted),
-                      onPressed: widget.enabled
-                          ? () => _showAttachmentSheet(context)
-                          : null,
-                      splashRadius: 20,
-                      hoverColor: AppTheme.textMuted.withOpacity(0.1),
-                      highlightColor: Colors.transparent,
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 2),
+                      child: IconButton(
+                        icon: const Icon(Icons.add, color: AppTheme.textMuted),
+                        onPressed: widget.enabled ? () => _showAttachmentSheet(context) : null,
+                        splashRadius: 20,
+                        hoverColor: AppTheme.textMuted.withOpacity(0.1),
+                        highlightColor: Colors.transparent,
+                      ),
                     ),
                     Expanded(
                       child: TextField(
@@ -1112,6 +1120,7 @@ class _SmartInputBarState extends State<SmartInputBar> {
                         textCapitalization: TextCapitalization.sentences,
                         minLines: 1,
                         maxLines: 5,
+                        keyboardType: TextInputType.multiline,
                         contentInsertionConfiguration: ContentInsertionConfiguration(
                           onContentInserted: (content) {
                             if (content.data != null) {
@@ -1127,9 +1136,7 @@ class _SmartInputBarState extends State<SmartInputBar> {
                           setState(() {}); 
                         },
                         decoration: InputDecoration(
-                          hintText: widget.enabled
-                              ? 'Type a message'
-                              : 'Connect to send',
+                          hintText: widget.enabled ? 'Type a message' : 'Connect to send',
                           hintStyle: const TextStyle(color: AppTheme.textMuted),
                           border: InputBorder.none,
                           focusedBorder: InputBorder.none,
@@ -1139,24 +1146,25 @@ class _SmartInputBarState extends State<SmartInputBar> {
                           filled: true,
                           fillColor: Colors.transparent,
                           hoverColor: Colors.transparent,
-                          contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 8, vertical: 14), 
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 14), 
                           isDense: true,
                         ),
-                        onSubmitted: (_) => _send(),
                       ),
                     ),
-                    IconButton(
-                      icon: Icon(
-                        Icons.send, 
-                        color: (widget.enabled && hasInput)
-                            ? const Color(0xFF007AFF) 
-                            : AppTheme.textMuted.withOpacity(0.3)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 2),
+                      child: IconButton(
+                        icon: Icon(
+                          Icons.send, 
+                          color: (widget.enabled && hasInput)
+                              ? const Color(0xFF007AFF) 
+                              : AppTheme.textMuted.withOpacity(0.3)
+                        ),
+                        onPressed: (widget.enabled && hasInput) ? _send : null,
+                        splashRadius: 20,
+                        hoverColor: AppTheme.textMuted.withOpacity(0.1),
+                        highlightColor: Colors.transparent,
                       ),
-                      onPressed: (widget.enabled && hasInput) ? _send : null,
-                      splashRadius: 20,
-                      hoverColor: AppTheme.textMuted.withOpacity(0.1),
-                      highlightColor: Colors.transparent,
                     ),
                     const SizedBox(width: 4),
                   ],
@@ -1175,13 +1183,12 @@ class _SmartInputBarState extends State<SmartInputBar> {
       barrierDismissible: true,
       barrierLabel: 'Close',
       barrierColor: Colors.transparent,
-      transitionDuration: Duration.zero, // no animation
+      transitionDuration: Duration.zero,
       pageBuilder: (ctx, _, __) {
         return Material(
           type: MaterialType.transparency,
           child: Stack(
             children: [
-              // full screen tap to close
               Positioned.fill(
                 child: GestureDetector(
                   onTap: () => Navigator.pop(ctx),
@@ -1189,14 +1196,13 @@ class _SmartInputBarState extends State<SmartInputBar> {
                   child: const ColoredBox(color: Colors.transparent),
                 ),
               ),
-              // your popup
               SafeArea(
                 child: Padding(
                   padding: const EdgeInsets.only(bottom: 65, left: 12),
                   child: Align(
                     alignment: Alignment.bottomLeft,
                     child: GestureDetector(
-                      onTap: () {}, // block inside taps
+                      onTap: () {},
                       child: IntrinsicWidth(
                         child: Container(
                           padding: const EdgeInsets.all(8),
@@ -1314,8 +1320,4 @@ class _SmartInputBarState extends State<SmartInputBar> {
     _focusNode.dispose();
     super.dispose();
   }
-}
-
-class _PasteIntent extends Intent {
-  const _PasteIntent();
 }
