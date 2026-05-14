@@ -393,13 +393,22 @@ class _HomeScreenState extends State<HomeScreen> {
                 alignment: Alignment.center,
                 children: [
                   isDownloaded
-                      ? Image.file(
-                          io.File(localPath),
-                          width: 260,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) =>
-                              _buildImagePlaceholder(payload, appState, isDownloading, progress, isMe, isDownloaded),
-                        )
+                    ? ClipRRect(
+                        borderRadius: innerRadius,
+                        child: Container(
+                          width: 260, // always fill the bubble width
+                          constraints: const BoxConstraints(
+                            minHeight: 140, // not too small
+                            maxHeight: 320, // not too tall
+                          ),
+                          child: Image.file(
+                            io.File(localPath),
+                            fit: BoxFit.cover,          // fills width, crops top/bottom if tall
+                            alignment: Alignment.center, // shows middle part
+                            width: 260,
+                          ),
+                        ),
+                      )
                       : _buildImagePlaceholder(payload, appState, isDownloading, progress, isMe, isDownloaded),
                 ],
               ),
