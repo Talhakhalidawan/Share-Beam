@@ -7,6 +7,7 @@ import 'ui/shared/theme.dart';
 import 'ui/mobile/home_screen.dart';
 import 'ui/mobile/settings_screen.dart';
 import 'ui/shared/floating_notifications.dart';
+import 'ui/mobile/preloader_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -31,9 +32,10 @@ class ShareBeamApp extends StatelessWidget {
       title: 'ShareBeam',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.theme,
-      initialRoute: '/',
+      initialRoute: '/preloader',
       routes: {
-        '/': (context) => const HomeScreen(),
+        '/preloader': (context) => const PreloaderScreen(),
+        '/': (context) => HomeScreen(),
         '/settings': (context) => const SettingsScreen(),
       },
       builder: (context, child) {

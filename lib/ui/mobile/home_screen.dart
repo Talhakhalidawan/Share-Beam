@@ -21,7 +21,7 @@ import '../../core/user_color.dart';
 import '../shared/theme.dart';
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({Key? key}) : super(key: key);
+  HomeScreen({Key? key}) : super(key: key);
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -981,7 +981,7 @@ class _PasteIntent extends Intent { const _PasteIntent(); }
 
 class SmartInputBar extends StatefulWidget {
   final bool enabled;
-  const SmartInputBar({Key? key, required this.enabled}) : super(key: key);
+  SmartInputBar({Key? key, required this.enabled}) : super(key: key);
 
   @override
   State<SmartInputBar> createState() => _SmartInputBarState();
