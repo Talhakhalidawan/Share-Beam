@@ -1,4 +1,4 @@
-name: Build APK
+name: Build and Release
 
 on:
   push:
@@ -8,11 +8,11 @@ on:
       - 'v*'
 
 jobs:
-  build:
+  build-android-linux:
+    name: Build Android and Linux
     runs-on: ubuntu-latest
     permissions:
       contents: write
-
     steps:
       - uses: actions/checkout@v4
 
@@ -64,6 +64,56 @@ jobs:
           cd build/linux/x64/release/bundle
           zip -r ../../../../../sharebeam-linux.zip .
 
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-linux-artifacts
+          path: |
+            build/app/outputs/flutter-apk/app-*-release.apk
+            sharebeam-linux.zip
+
+  build-windows:
+    name: Build Windows
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Build Windows
+        run: |
+          flutter build windows --release
+          Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath sharebeam-windows.zip
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-artifact
+          path: sharebeam-windows.zip
+
+  release:
+    name: Create Release
+    needs: [build-android-linux, build-windows]
+    if: startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download All Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./artifacts
+          merge-multiple: true
+
       - name: Get Version
         id: get_version
         run: |
@@ -73,14 +123,16 @@ jobs:
       - name: Create Release
         uses: ncipollo/release-action@v1
         with:
-          artifacts: "build/app/outputs/flutter-apk/app-*-release.apk, sharebeam-linux.zip"
+          artifacts: "artifacts/*.apk, artifacts/*.zip"
           tag: "${{ steps.get_version.outputs.version }}.${{ github.run_number }}"
           name: "Release ${{ steps.get_version.outputs.version }} (Build ${{ github.run_number }})"
-          body: "Automated build of Sharebeam. Download the APK for Android or the .zip for Linux."
+          body: |
+            Automated build of Sharebeam. 
+            
+            Downloads:
+            - Android: APK files
+            - Linux: .zip bundle
+            - Windows: .zip bundle (Untested, experimental)
+            
+            Note: The Windows build is currently untested and may contain bugs.
           token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload APK Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: release-apks
-          path: build/app/outputs/flutter-apk/app-*-release.apk
