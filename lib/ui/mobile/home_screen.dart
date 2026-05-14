@@ -13,6 +13,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:gal/gal.dart';
+import 'package:pasteboard/pasteboard.dart';
 
 import '../../core/app_state.dart';
 import '../../core/models.dart';
@@ -925,28 +926,47 @@ class _SmartInputBarState extends State<SmartInputBar> {
   final FocusNode _focusNode = FocusNode(); // Added to maintain keyboard state
   Uint8List? _pendingImageBytes;
   String? _pendingImageName;
+  
 
   Future<bool> _handlePaste() async {
     try {
-      // Use standard Flutter clipboard for text pasting to avoid dependencies
-      final clipboardData = await Clipboard.getData(Clipboard.kTextPlain);
-      final text = clipboardData?.text;
-      
-      if (text != null && text.isNotEmpty) {
-        final selection = _controller.selection;
-        final currentText = _controller.text;
-        
-        // Safely calculate offsets (handles cases where selection.start is -1)
-        final start = selection.start >= 0 ? selection.start : currentText.length;
-        final end = selection.end >= 0 ? selection.end : currentText.length;
-        
-        final newText = currentText.replaceRange(start, end, text);
-        
+      final bytes = await Pasteboard.image;
+      if (bytes != null && bytes.isNotEmpty) {
+        setState(() {
+          _pendingImageBytes = bytes;
+          _pendingImageName = 'pasted_${DateTime.now().millisecondsSinceEpoch}.png';
+        });
+        return true;
+      }
+    } catch (_) {}
+
+    // 2. Text fallback
+    try {
+      final text = await Pasteboard.text;
+      if (text == null || text.isEmpty) {
+        final data = await Clipboard.getData(Clipboard.kTextPlain);
+        if (data?.text != null && data!.text!.isNotEmpty) {
+          final sel = _controller.selection;
+          final start = sel.start >= 0 ? sel.start : _controller.text.length;
+          final end = sel.end >= 0 ? sel.end : _controller.text.length;
+          final newText = _controller.text.replaceRange(start, end, data.text!);
+          _controller.value = TextEditingValue(
+            text: newText,
+            selection: TextSelection.collapsed(offset: start + data.text!.length),
+          );
+          setState(() {});
+          return true;
+        }
+      } else {
+        final sel = _controller.selection;
+        final start = sel.start >= 0 ? sel.start : _controller.text.length;
+        final end = sel.end >= 0 ? sel.end : _controller.text.length;
+        final newText = _controller.text.replaceRange(start, end, text);
         _controller.value = TextEditingValue(
           text: newText,
           selection: TextSelection.collapsed(offset: start + text.length),
         );
-        setState(() {}); 
+        setState(() {});
         return true;
       }
     } catch (_) {}

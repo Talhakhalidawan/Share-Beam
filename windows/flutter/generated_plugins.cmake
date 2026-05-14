@@ -7,6 +7,7 @@ list(APPEND FLUTTER_PLUGIN_LIST
   file_selector_windows
   gal
   irondash_engine_context
+  pasteboard
   permission_handler_windows
   share_plus
   super_native_extensions
