@@ -144,9 +144,18 @@ class AppState extends ChangeNotifier {
     _initNetwork();
 
     _discoveryService.devicesStream.listen((devices) {
-      discoveredHosts = devices;
-      if (!isHosting && !isConnectedToHost && !isBusy && devices.isNotEmpty) {
-        _tryAutoConnect(devices);
+      final seenNames = <String>{};
+      final uniqueDevices = <DiscoveredDevice>[];
+      for (final device in devices) {
+        if (!seenNames.contains(device.name)) {
+          seenNames.add(device.name);
+          uniqueDevices.add(device);
+        }
+      }
+      discoveredHosts = uniqueDevices;
+
+      if (!isHosting && !isConnectedToHost && !isBusy && uniqueDevices.isNotEmpty) {
+        _tryAutoConnect(uniqueDevices);
       }
       notifyListeners();
     });
