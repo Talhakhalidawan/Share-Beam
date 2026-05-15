@@ -54,7 +54,11 @@ static void my_application_activate(GApplication* application) {
 
   // Set window icon
   g_autoptr(GError) error = nullptr;
-  if (!gtk_window_set_icon_from_file(window, "data/flutter_assets/assets/images/logo.png", &error)) {
+  const char* icon_path = "data/flutter_assets/assets/images/logo.png";
+  if (!g_file_test(icon_path, G_FILE_TEST_EXISTS)) {
+    icon_path = "assets/images/logo.png";
+  }
+  if (!gtk_window_set_icon_from_file(window, icon_path, &error)) {
     g_warning("Failed to load window icon: %s", error->message);
   }
 
