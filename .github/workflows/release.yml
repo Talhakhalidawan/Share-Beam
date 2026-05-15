@@ -62,13 +62,13 @@ jobs:
       - name: Package Linux
         run: |
           cd build/linux/x64/release/bundle
-          zip -r ../../../../../sharebeam-linux.zip .
+          tar -czf ../../../../../sharebeam-linux-x64.tar.gz .
 
       - name: Upload Linux Build
         uses: actions/upload-artifact@v4
         with:
           name: linux-build
-          path: sharebeam-linux.zip
+          path: sharebeam-linux-x64.tar.gz
 
   build-windows:
     name: Build Windows
@@ -90,13 +90,13 @@ jobs:
 
       - name: Package Windows
         run: |
-          Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath sharebeam-windows.zip
+          Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath sharebeam-windows-x64.zip
 
       - name: Upload Windows Build
         uses: actions/upload-artifact@v4
         with:
           name: windows-build
-          path: sharebeam-windows.zip
+          path: sharebeam-windows-x64.zip
 
   release:
     name: Create Release
@@ -123,15 +123,15 @@ jobs:
       - name: Create Release
         uses: ncipollo/release-action@v1
         with:
-          artifacts: "artifacts/*.apk, artifacts/*.zip"
+          artifacts: "artifacts/*.apk, artifacts/*.zip, artifacts/*.tar.gz"
           tag: "${{ steps.get_version.outputs.version }}.${{ github.run_number }}"
           name: "Release ${{ steps.get_version.outputs.version }} (Build ${{ github.run_number }})"
           body: |
             Automated build of Sharebeam. 
             
             Available for:
-            - Android (APKs for different ABIs)
-            - Linux (Portable ZIP)
-            - Windows (Portable ZIP)
+            - Android: APKs for different ABIs
+            - Linux: .tar.gz bundle (Extract and run 'sharebeam')
+            - Windows: .zip bundle (Extract and run 'sharebeam.exe')
           token: ${{ secrets.GITHUB_TOKEN }}
           allowUpdates: true
