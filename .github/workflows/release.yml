@@ -39,7 +39,7 @@ jobs:
           path: build/app/outputs/flutter-apk/app-*-release.apk
 
   build-linux:
-    name: Build Linux (DEB & AppImage)
+    name: Build Linux (ZIP)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -52,8 +52,8 @@ jobs:
 
       - name: Install dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libstdc++6 libsecret-1-dev
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libstdc++6 libsecret-1-dev
           flutter pub get
 
       - name: Install flutter_distributor
@@ -62,16 +62,16 @@ jobs:
       - name: Package Linux
         run: |
           export PATH="$PATH":"$HOME/.pub-cache/bin"
-          flutter_distributor release --name release --jobs linux-deb,linux-appimage
+          flutter_distributor release --name release --jobs linux-zip
 
       - name: Upload Linux Build
         uses: actions/upload-artifact@v4
         with:
           name: linux-build
-          path: dist/release/*/linux-*.deb, dist/release/*/linux-*.AppImage
+          path: dist/release/*/linux-*.zip
 
   build-windows:
-    name: Build Windows (MSIX)
+    name: Build Windows (ZIP)
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -88,14 +88,16 @@ jobs:
       - name: Build Windows
         run: flutter build windows --release
 
-      - name: Create MSIX
-        run: dart run msix:create
+      - name: Create ZIP
+        shell: pwsh
+        run: |
+          Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath build\windows\x64\runner\Release\sharebeam-windows.zip
 
       - name: Upload Windows Build
         uses: actions/upload-artifact@v4
         with:
           name: windows-build
-          path: build/windows/x64/runner/Release/*.msix
+          path: build\windows\x64\runner\Release\sharebeam-windows.zip
 
   release:
     name: Create Release
@@ -122,7 +124,7 @@ jobs:
       - name: Create Release
         uses: ncipollo/release-action@v1
         with:
-          artifacts: "artifacts/*.apk, artifacts/*.msix, artifacts/*.deb, artifacts/*.AppImage"
+          artifacts: "artifacts/*.apk, artifacts/*.zip"
           tag: "${{ steps.get_version.outputs.version }}.${{ github.run_number }}"
           name: "Release ${{ steps.get_version.outputs.version }} (Build ${{ github.run_number }})"
           body: |
@@ -130,7 +132,7 @@ jobs:
             
             Available for:
             - Android: APKs
-            - Windows: .msix Installer
-            - Linux: .deb package and .AppImage
+            - Windows: Portable ZIP
+            - Linux: Portable ZIP
           token: ${{ secrets.GITHUB_TOKEN }}
           allowUpdates: true

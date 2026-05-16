@@ -52,7 +52,6 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^4.0.0
-  msix: ^3.16.13
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
@@ -95,15 +94,6 @@ flutter:
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
 
-msix_config:
-  display_name: Sharebeam
-  publisher_display_name: Talha Khalid
-  publisher: CN=TalhaKhalid, O=TalhaKhalid, L=Lahore, S=Punjab, C=PK
-  identity_name: com.talhakhalid.sharebeam
-  msix_version: 1.0.0.0
-  logo_path: assets/images/logo.png
-  capabilities: internetClient, internetClientServer, privateNetworkClientServer
-  install_certificate: false
 
 flutter_launcher_icons:
   android: true

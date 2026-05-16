@@ -76,3 +76,5 @@ app.*.map.json
 
 # Generated plugin registrants
 **/GeneratedPluginRegistrant.*
+
+/gnome-extension

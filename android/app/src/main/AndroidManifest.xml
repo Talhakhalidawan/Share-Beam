@@ -10,7 +10,7 @@
     <application
         android:label="Sharebeam"
         android:name="${applicationName}"
-        android:icon="@mipmap/launcher_icon">
+        android:icon="@mipmap/ic_launcher">
         
         <provider
             android:name="com.superlist.super_native_extensions.DataProvider"
