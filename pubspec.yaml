@@ -1,22 +1,8 @@
 name: sharebeam
-description: "A new Flutter project."
-# The following line prevents the package from being accidentally published to
-# pub.dev using `flutter pub publish`. This is preferred for private packages.
-publish_to: 'none' # Remove this line if you wish to publish to pub.dev
-
-# The following defines the version and build number for your application.
-# A version number is three numbers separated by dots, like 1.2.43
-# followed by an optional build number separated by a +.
-# Both the version and the builder number may be overridden in flutter
-# build by specifying --build-name and --build-number, respectively.
-# In Android, build-name is used as versionName while build-number used as versionCode.
-# Read more about Android versioning at https://developer.android.com/studio/publish/versioning
-# In iOS, build-name is used as CFBundleShortVersionString while build-number is used as CFBundleVersion.
-# Read more about iOS versioning at
-# https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
-# In Windows, build-name is used as the major, minor, and patch parts
-# of the product and file versions while build-number is used as the build suffix.
+description: "Professional cross-platform file sharing application."
 version: 1.0.0+1
+homepage: https://github.com/talhakhalid/sharebeam
+repository: https://github.com/talhakhalid/sharebeam
 
 environment:
   sdk: ^3.4.4
@@ -66,6 +52,7 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^4.0.0
+  msix: ^3.16.13
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
@@ -107,6 +94,16 @@ flutter:
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
+
+msix_config:
+  display_name: Sharebeam
+  publisher_display_name: Talha Khalid
+  publisher: CN=TalhaKhalid, O=TalhaKhalid, L=Lahore, S=Punjab, C=PK
+  identity_name: com.talhakhalid.sharebeam
+  msix_version: 1.0.0.0
+  logo_path: assets/images/logo.png
+  capabilities: internetClient, internetClientServer, privateNetworkClientServer
+  install_certificate: false
 
 flutter_launcher_icons:
   android: true

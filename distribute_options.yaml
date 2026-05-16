@@ -1,0 +1,24 @@
+output: dist/
+releases:
+  - name: release
+    jobs:
+      - name: linux-deb
+        package:
+          platform: linux
+          target: deb
+          build_args:
+            --release:
+        artifacts:
+          - build/linux/x64/release/bundle/**
+      - name: linux-appimage
+        package:
+          platform: linux
+          target: appimage
+          build_args:
+            --release:
+      - name: windows-msix
+        package:
+          platform: windows
+          target: msix
+          build_args:
+            --release:
