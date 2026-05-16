@@ -39,7 +39,7 @@ jobs:
           path: build/app/outputs/flutter-apk/app-*-release.apk
 
   build-linux:
-    name: Build Linux
+    name: Build Linux (DEB & AppImage)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -53,25 +53,25 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libstdc++6
+          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libstdc++6 libsecret-1-dev
           flutter pub get
 
-      - name: Build Linux
-        run: flutter build linux --release
+      - name: Install flutter_distributor
+        run: dart pub global activate flutter_distributor
 
       - name: Package Linux
         run: |
-          cd build/linux/x64/release/bundle
-          tar -czf ../../../../../sharebeam-linux-x64.tar.gz .
+          export PATH="$PATH":"$HOME/.pub-cache/bin"
+          flutter_distributor package --name release --jobs linux-deb,linux-appimage
 
       - name: Upload Linux Build
         uses: actions/upload-artifact@v4
         with:
           name: linux-build
-          path: sharebeam-linux-x64.tar.gz
+          path: dist/release/*/linux-*.deb, dist/release/*/linux-*.AppImage
 
   build-windows:
-    name: Build Windows
+    name: Build Windows (MSIX)
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -88,15 +88,14 @@ jobs:
       - name: Build Windows
         run: flutter build windows --release
 
-      - name: Package Windows
-        run: |
-          Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath sharebeam-windows-x64.zip
+      - name: Create MSIX
+        run: dart run msix:create
 
       - name: Upload Windows Build
         uses: actions/upload-artifact@v4
         with:
           name: windows-build
-          path: sharebeam-windows-x64.zip
+          path: build/windows/x64/runner/Release/*.msix
 
   release:
     name: Create Release
@@ -123,15 +122,15 @@ jobs:
       - name: Create Release
         uses: ncipollo/release-action@v1
         with:
-          artifacts: "artifacts/*.apk, artifacts/*.zip, artifacts/*.tar.gz"
+          artifacts: "artifacts/*.apk, artifacts/*.msix, artifacts/*.deb, artifacts/*.AppImage"
           tag: "${{ steps.get_version.outputs.version }}.${{ github.run_number }}"
           name: "Release ${{ steps.get_version.outputs.version }} (Build ${{ github.run_number }})"
           body: |
-            Automated build of Sharebeam. 
+            Professional Release of Sharebeam. 
             
             Available for:
-            - Android: APKs for different ABIs
-            - Linux: .tar.gz bundle (Extract and run 'sharebeam')
-            - Windows: .zip bundle (Extract and run 'sharebeam.exe')
+            - Android: APKs
+            - Windows: .msix Installer
+            - Linux: .deb package and .AppImage
           token: ${{ secrets.GITHUB_TOKEN }}
           allowUpdates: true
