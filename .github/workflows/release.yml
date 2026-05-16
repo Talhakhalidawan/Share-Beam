@@ -62,7 +62,7 @@ jobs:
       - name: Package Linux
         run: |
           export PATH="$PATH":"$HOME/.pub-cache/bin"
-          flutter_distributor package --name release --jobs linux-deb,linux-appimage
+          flutter_distributor release --name release --jobs linux-deb,linux-appimage
 
       - name: Upload Linux Build
         uses: actions/upload-artifact@v4
